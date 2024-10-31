@@ -93,7 +93,7 @@ RayTracer/
 │   └── scene.h           # Scene header
 ├── assets/               # Textures or additional assets
 └── README.md
-
+```
 ## 🔮 Future Enhancements
 
 - **✨ Additional Shading Models**: Implement other shading models, such as Blinn-Phong and Lambertian shading.
