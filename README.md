@@ -4,13 +4,13 @@ Welcome to **RayPulse**, a custom-built ray tracing engine designed in **C** usi
 
 ## 📑 Table of Contents
 
-- [🎯 Project Goals](#project-goals)
-- [✨ Features](#features)
-- [🛠 Requirements](#requirements)
-- [📥 Installation](#installation)
-- [🚀 Usage](#usage)
-- [📂 Structure](#structure)
-- [🔮 Future Enhancements](#future-enhancements)
+- [🎯 Project Goals](##project-goals)
+- [✨ Features](##features)
+- [🛠 Requirements](##requirements)
+- [📥 Installation](##installation)
+- [🚀 Usage](##usage)
+- [📂 Structure](##structure)
+- [🔮 Future Enhancements](##future-enhancements)
 
 ## 🎯 Project Goals
 
