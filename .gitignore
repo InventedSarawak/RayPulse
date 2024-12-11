@@ -1,5 +1,4 @@
 .vscode
 bin
-Makefile
 build
 image.ppm

@@ -1,31 +1,35 @@
+#include <GLFW/glfw3.h>
 #include <stdio.h>
-#include <math.h>
 
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    (void)window;
+    glViewport(0, 0, width, height);
+}
 
 int main() {
-    // image
-    int image_width = 256;
-    int image_height = 256;
-    double r, g, b;
-
-    // render 
-
-    printf("P3\n%d %d\n255\n", image_width, image_height);
-
-    for (int i = 0; i < image_height; i++) {
-        fprintf(stderr, "\rScanlines remaining: %d ", image_height - i);
-        for (int j = 0; j < image_width; j++) {
-            r = (double) i / (double)(image_height - 1);
-            g = (double) j / (double)(image_width - 1);
-            b = 0.25;
-
-            int ir = floor(255.99 * r);
-            int ig = floor(255.99 * g);
-            int ib = floor(255.99 * b);
-
-            printf("%d %d %d\n", ir, ig, ib);
-        }
+    if (!glfwInit()) {
+        printf("Failed to initialize GLFW\n");
+        return -1;
     }
-    fprintf(stderr, "\rDone.                 \n");
+
+    GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL Window", NULL, NULL);
+    if (!window) {
+        printf("Failed to create GLFW window\n");
+        glfwTerminate();
+        return -1;
+    }
+
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    while (!glfwWindowShouldClose(window)) {
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
     return 0;
 }
