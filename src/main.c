@@ -1,35 +1,51 @@
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
+
 #include <stdio.h>
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-    (void)window;
-    glViewport(0, 0, width, height);
-}
+int main(void) {
+    GLFWwindow *window;
 
-int main() {
-    if (!glfwInit()) {
-        printf("Failed to initialize GLFW\n");
+    /* Initialize the library */
+    if (!glfwInit())
         return -1;
-    }
 
-    GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL Window", NULL, NULL);
+    /* Create a windowed mode window and its OpenGL context */
+    window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
     if (!window) {
-        printf("Failed to create GLFW window\n");
         glfwTerminate();
         return -1;
     }
 
+    /* Make the window's context current */
     glfwMakeContextCurrent(window);
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
+    GLenum err = glewInit();
+    if (GLEW_OK != err) {
+        // Problem: glewInit failed
+        fprintf(stderr, "Error: %s\n", glewGetErrorString(err));
+        return 1;
+    }
+    fprintf(stdout, "GLEW version: %s\n", glewGetString(GLEW_VERSION));
+    fprintf(stdout, "GL version: %s\n", glGetString(GL_VERSION));
+
+    /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window)) {
+        /* Render here */
         glClear(GL_COLOR_BUFFER_BIT);
 
+        glBegin(GL_TRIANGLES);
+        glVertex2f(-0.5f, -0.5f);
+        glVertex2f(0.5f, -0.5f);
+        glVertex2f(0.0f, 0.5f);
+        glEnd();
+        /* Swap front and back buffers */
         glfwSwapBuffers(window);
+
+        /* Poll for and process events */
         glfwPollEvents();
     }
 
-    glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
 }

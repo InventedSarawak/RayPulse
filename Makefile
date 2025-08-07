@@ -1,36 +1,31 @@
-# Compiler and flags
-CC = gcc
-CFLAGS = -Wall -Wextra -g
-LDFLAGS = -lGL -lGLU -lglfw
+.PHONY: all build clean run install
 
-# Directories
-SRC_DIR = src
-BUILD_DIR = build
+MESON_BUILD_DIR = build
 
-# Source and target
-SRCS = $(wildcard $(SRC_DIR)/*.c)
-OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
-TARGET = $(BUILD_DIR)/ray_pulse
+all: build
 
-# Default target
-all: $(TARGET)
+build:
+	rm -rf $(MESON_BUILD_DIR)
+	meson setup $(MESON_BUILD_DIR)
+	meson compile -C $(MESON_BUILD_DIR)
+	@echo "Compiled $(MESON_BUILD_DIR) directory"
 
-# Compile the target
-$(TARGET): $(OBJS)
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
-	@echo "Build complete: $(TARGET)"
-
-# Compile source files into object files
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# Clean up build files
 clean:
-	rm -rf $(BUILD_DIR)
-	@echo "Cleaned up build files."
+	rm -rf $(MESON_BUILD_DIR)
+	@echo "Cleaned $(MESON_BUILD_DIR) directory"
 
-# Run the program
-run: all
-	$(TARGET)
+run:
+	@if [ ! -d $(MESON_BUILD_DIR) ]; then \
+		echo "Build directory not found. Running build..."; \
+		$(MAKE) build; \
+	fi
+	@if [ -f $(MESON_BUILD_DIR)/ray_pulse ]; then \
+		echo "Running ray_pulse..."; \
+		./$(MESON_BUILD_DIR)/ray_pulse; \
+	else \
+		echo "Executable not found: $(MESON_BUILD_DIR)/ray_pulse"; \
+		exit 1; \
+	fi
+
+install: build
+	meson install -C $(MESON_BUILD_DIR)
