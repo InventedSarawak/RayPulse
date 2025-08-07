@@ -15,10 +15,7 @@ clean:
 	@echo "Cleaned $(MESON_BUILD_DIR) directory"
 
 run:
-	@if [ ! -d $(MESON_BUILD_DIR) ]; then \
-		echo "Build directory not found. Running build..."; \
-		$(MAKE) build; \
-	fi
+	$(MAKE) build
 	@if [ -f $(MESON_BUILD_DIR)/ray_pulse ]; then \
 		echo "Running ray_pulse..."; \
 		./$(MESON_BUILD_DIR)/ray_pulse; \
