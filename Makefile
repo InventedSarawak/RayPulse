@@ -18,6 +18,7 @@ run:
 	$(MAKE) build
 	@if [ -f $(MESON_BUILD_DIR)/ray_pulse ]; then \
 		echo "Running ray_pulse..."; \
+		clear; \
 		./$(MESON_BUILD_DIR)/ray_pulse; \
 	else \
 		echo "Executable not found: $(MESON_BUILD_DIR)/ray_pulse"; \
