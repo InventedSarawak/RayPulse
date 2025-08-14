@@ -1,6 +1,3 @@
-// Compile with:
-// gcc rainbow_triangle.c -o triangle -lglfw -lGL -lGLEW
-
 #include "utils/read_file.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -62,12 +59,12 @@ int main() {
 
     // Vertex Shader
     unsigned int vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &vertex_shader_src, NULL);
+    glShaderSource(vertex_shader, 1, (const GLchar *const *)&vertex_shader_src, NULL);
     glCompileShader(vertex_shader);
 
     // Fragment Shader
     unsigned int fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, &fragment_shader_src, NULL);
+    glShaderSource(fragment_shader, 1, (const GLchar *const *)&fragment_shader_src, NULL);
     glCompileShader(fragment_shader);
 
     // Shader Program
