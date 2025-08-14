@@ -1,9 +1,7 @@
 {
     "files.associations": {
         "*.ejs": "html",
-        ".env*": "dotenv",
-        "stdio.h": "c",
-        "read_file.h": "c"
+        ".env*": "dotenv"
     },
     "C_Cpp.default.compileCommands": "/home/vedant/Projects/RayPulse/builddir/compile_commands.json",
     "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"

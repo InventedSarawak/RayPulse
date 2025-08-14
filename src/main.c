@@ -1,6 +1,6 @@
-#include "utils/read_file.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <read_file.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -8,8 +8,8 @@ const char *vertex_shader_src = NULL;
 const char *fragment_shader_src = NULL;
 
 int main() {
-    const GLchar *vertex_shader_src = read_file("./src/vertex_shader.glsl");
-    const GLchar *fragment_shader_src = read_file("./src/fragment_shader.glsl");
+    const GLchar *vertex_shader_src = read_file("./src/shaders/vertex_shader.glsl");
+    const GLchar *fragment_shader_src = read_file("./src/shaders/fragment_shader.glsl");
 
     if (!glfwInit()) {
         fprintf(stderr, "Failed to initialize GLFW\n");
