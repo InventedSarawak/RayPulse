@@ -4,13 +4,17 @@ Welcome to **RayPulse**, a custom-built ray tracing engine designed in **C** usi
 
 ## 📑 Table of Contents
 
-- [🎯 Project Goals](#-project-goals)
-- [✨ Features](#-features)
-- [🛠 Requirements](#-requirements)
-- [📥 Installation](#-installation)
-- [🚀 Usage](#-usage)
-- [📂 Structure](#-structure)
-- [🔮 Future Enhancements](#-future-enhancements)
+- [🌌 RayPulse - A Custom Ray Tracer in C with OpenGL 🌌](#-raypulse---a-custom-ray-tracer-in-c-with-opengl-)
+  - [📑 Table of Contents](#-table-of-contents)
+  - [🎯 Project Goals](#-project-goals)
+  - [✨ Features](#-features)
+  - [🛠 Requirements](#-requirements)
+  - [📥 Installation](#-installation)
+  - [🚀 Usage](#-usage)
+  - [📂 Structure](#-structure)
+  - [🔮 Future Enhancements](#-future-enhancements)
+  - [📜 License](#-license)
+  - [🖼️ Building an image](#️-building-an-image)
 
 ## 🎯 Project Goals
 
@@ -105,3 +109,8 @@ RayTracer/
 
 This project is open-source and available under the [MIT License](LICENSE).
 
+## 🖼️ Building an image
+```bash
+gcc -Iinclude -o build/create_image src/utils/create_image.c src/utils/vec3.c src/utils/color.c -lm
+./build/create_image > image.ppm
+```
