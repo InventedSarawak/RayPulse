@@ -8,8 +8,8 @@ const char *vertex_shader_src = NULL;
 const char *fragment_shader_src = NULL;
 
 int main() {
-    char *vertex_shader_src = read_file("vertex_shader.glsl");
-    char *fragment_shader_src = read_file("fragment_shader.glsl");
+    const GLchar *vertex_shader_src = read_file("./src/vertex_shader.glsl");
+    const GLchar *fragment_shader_src = read_file("./src/fragment_shader.glsl");
 
     if (!glfwInit()) {
         fprintf(stderr, "Failed to initialize GLFW\n");
@@ -59,12 +59,12 @@ int main() {
 
     // Vertex Shader
     unsigned int vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, (const GLchar *const *)&vertex_shader_src, NULL);
+    glShaderSource(vertex_shader, 1, &vertex_shader_src, NULL);
     glCompileShader(vertex_shader);
 
     // Fragment Shader
     unsigned int fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, (const GLchar *const *)&fragment_shader_src, NULL);
+    glShaderSource(fragment_shader, 1, &fragment_shader_src, NULL);
     glCompileShader(fragment_shader);
 
     // Shader Program
@@ -96,7 +96,7 @@ int main() {
     glfwDestroyWindow(window);
     glfwTerminate();
 
-    free(vertex_shader_src);
-    free(fragment_shader_src);
+    free((void *)vertex_shader_src);
+    free((void *)fragment_shader_src);
     return 0;
 }
