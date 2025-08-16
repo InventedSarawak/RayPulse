@@ -1,9 +1,9 @@
-project('RayPulse', 'c',
+project('RayPulse', 'cpp',
   version : '0.1',
   default_options : ['c_std=c99']
 )
 
-src = files('src/main.c', 'src/utils/read_file.c')
+src = files('src/main.cpp')
 inc = include_directories('include')
 
 glfw_dep = dependency('glfw3', required : true)
