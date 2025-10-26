@@ -13,5 +13,7 @@ opengl_dep = dependency('opengl', required : true)
 executable('ray_pulse', src,
   include_directories : inc,
   dependencies : [glfw_dep, glew_dep, opengl_dep],
+  cpp_args : ['-fopenmp'],
+  link_args : ['-fopenmp'],
   install : true
 )

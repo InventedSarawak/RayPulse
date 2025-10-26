@@ -19,6 +19,7 @@ color ray_color(const ray &r, const hittable &world) {
 }
 
 int main() {
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
     hittable_list world;
 
     auto ground_material = make_shared<lambertian>(color(0.5, 0.5, 0.5));
@@ -65,7 +66,7 @@ int main() {
 
     cam.aspect_ratio = 16.0 / 9.0;
     cam.image_width = 1200;
-    cam.samples_per_pixel = 100;
+    cam.samples_per_pixel = 30;
     cam.max_depth = 50;
 
     cam.vfov = 20;

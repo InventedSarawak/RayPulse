@@ -2,3 +2,4 @@ bin
 build
 image.ppm
 meson-logs
+images

@@ -3,6 +3,10 @@
 
 #include "hittable.h"
 #include "material.h"
+#include <atomic>
+#include <chrono>
+#include <omp.h>
+#include <vector>
 
 class camera {
   public:
@@ -15,26 +19,52 @@ class camera {
     point3 lookat = point3(0, 0, -1);  // Point camera is looking at
     vec3 vup = vec3(0, 1, 0);          // Camera-relative "up" direction
     double defocus_angle = 0;          // Variation angle of rays through each pixel
-    double focus_dist = 10; // Distance from camera lookfrom point to plane of perfect focus
+    double focus_dist = 10;            // Distance from camera lookfrom point to plane of perfect focus
 
     void render(const hittable &world) {
         initialize();
 
-        std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
+        std::vector<color> framebuffer(image_width * image_height);
+        std::atomic<int> scanlines_done{0};
+        std::atomic<int> pixels_done{0};
+        const int total_pixels = image_width * image_height;
 
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+#pragma omp parallel for schedule(dynamic)
         for (int j = 0; j < image_height; j++) {
-            std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' << std::flush;
             for (int i = 0; i < image_width; i++) {
                 color pixel_color(0, 0, 0);
                 for (int sample = 0; sample < samples_per_pixel; sample++) {
                     ray r = get_ray(i, j);
                     pixel_color += ray_color(r, max_depth, world);
                 }
-                write_color(std::cout, pixel_samples_scale * pixel_color);
+                framebuffer[j * image_width + i] = pixel_samples_scale * pixel_color;
+                pixels_done++;
+                if (pixels_done % 5000 == 0) {
+                    std::clog << "\rScanlines done: " << scanlines_done
+                              << " | Pixels written: " << pixels_done << "/" << total_pixels
+                              << std::flush;
+                }
+            }
+
+            scanlines_done++;
+        }
+
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> render_duration = end_time - start_time;
+
+        std::clog << "\rScanlines done: " << scanlines_done << " | Pixels written: " << total_pixels
+                  << "/" << total_pixels << std::endl;
+
+        std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
+        for (int j = 0; j < image_height; j++) {
+            for (int i = 0; i < image_width; i++) {
+                write_color(std::cout, framebuffer[j * image_width + i]);
             }
         }
 
-        std::clog << "\rDone.                 \n";
+        std::clog << "Render complete in " << render_duration.count() << " seconds.\n";
     }
 
   private:
