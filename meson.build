@@ -17,6 +17,18 @@ endif
 lib_include_dir = include_directories('../libraries/include')
 prj_include_dir = include_directories('include')
 
+imgui_src_dir = 'src/imgui'
+imgui_include_dir = include_directories(imgui_src_dir)
+
+imgui_sources = [
+    join_paths(imgui_src_dir, 'imgui.cpp'),
+    join_paths(imgui_src_dir, 'imgui_draw.cpp'),
+    join_paths(imgui_src_dir, 'imgui_widgets.cpp'),
+    join_paths(imgui_src_dir, 'imgui_tables.cpp'),
+    join_paths(imgui_src_dir, 'backends/imgui_impl_glfw.cpp'),
+    join_paths(imgui_src_dir, 'backends/imgui_impl_opengl3.cpp'),
+]
+
 glad_src = '../libraries/src/glad.c'
 glfw_lib = '../libraries/lib/glfw3.lib'
 glm_lib = '../libraries/lib/glm.lib'
@@ -131,8 +143,8 @@ dependencies = [
 
 executable(
     'main',
-    ['src/main.cpp','src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp'],
+    ['src/main.cpp','src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp'] + imgui_sources,
     dependencies : dependencies,
-    include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir],
+    include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir, imgui_include_dir],
     install : true
 )

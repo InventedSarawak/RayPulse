@@ -36,7 +36,7 @@ void main()
     // Assume focal length = 1.0 (the z component)
     vec3 rayDir = normalize(vec3(ndc, -1.0));
 
-    // Reference vector pointing down -Z
+    /*// Reference vector pointing down -Z
     vec3 refVector = vec3(0.0, 0.0, -1.0);
 
     // Calculate angle using dot product
@@ -53,7 +53,15 @@ void main()
     // Color gradient from blue (center) to red (edges)
     vec3 color1 = vec3(0.1, 0.1, 0.8); // Blue
     vec3 color2 = vec3(0.8, 0.1, 0.1); // Red
-    vec3 color = mix(color1, color2, t);
+    vec3 color = mix(color1, color2, t);*/
+
+    vec3 colorBottom = vec3(0.98, 0.98, 0.98);
+    vec3 colorTop = vec3(0.5, 0.7, 1.0);
+
+    // Blending factor: map ray.y from [-1, 1] to [0, 1]
+    float blendingFactor = 0.5 * (rayDir.y + 1.0);
+
+    vec3 color = mix(colorBottom, colorTop, blendingFactor);
 
     // Write the color to the output image
     imageStore(outputImage, pixelCoords, vec4(color, 1.0));
