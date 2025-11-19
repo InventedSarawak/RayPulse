@@ -1,0 +1,695 @@
+=== .\src\export.cpp ===
+```
+#include "export.h"
+#include <OpenEXR/ImfRgbaFile.h>
+#include <OpenEXR/ImfArray.h>
+#include <vector>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <cstdio>
+
+void saveToEXR(GLuint texture, int width, int height, const char* filename) {
+    std::vector<float> pixels(width * height * 4); // RGBA
+
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, pixels.data());
+
+    // Convert to OpenEXR format
+    Imf::Array2D<Imf::Rgba> exrPixels(height, width);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            // OpenGL origin is bottom-left, OpenEXR is top-left
+            int glIndex = ((height - 1 - y) * width + x) * 4;
+
+            exrPixels[y][x].r = pixels[glIndex + 0];
+            exrPixels[y][x].g = pixels[glIndex + 1];
+            exrPixels[y][x].b = pixels[glIndex + 2];
+            exrPixels[y][x].a = pixels[glIndex + 3];
+        }
+    }
+
+    // Write to EXR file
+    Imf::RgbaOutputFile file(filename, width, height, Imf::WRITE_RGBA);
+    file.setFrameBuffer(&exrPixels[0][0], 1, width);
+    file.writePixels(height);
+
+    printf("Saved image to %s (%dx%d)\n", filename, width, height);
+}
+
+const char* generateTimestampedFilename(const char* prefix, const char* extension) {
+    static char buffer[256];
+    
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    
+    std::ostringstream filename;
+    filename << prefix << "_" 
+             << std::put_time(std::localtime(&time), "%Y%m%d_%H%M%S") 
+             << extension;
+    
+    snprintf(buffer, sizeof(buffer), "%s", filename.str().c_str());
+    return buffer;
+}
+```
+
+=== .\src\main.cpp ===
+```
+#include <cstdio>
+#include <glad/gl.h>
+#include <GLFW/glfw3.h>
+#include "shader.h"
+#include "texture.h"
+#include "renderer.h"
+#include "export.h"
+
+#define INIT_WINDOW_WIDTH 800
+#define INIT_WINDOW_HEIGHT 600
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void processInput(GLFWwindow* window, GLuint texture, int width, int height);
+
+int main() {
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    GLFWwindow* window = glfwCreateWindow(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT, 
+                                          "Raypulse", nullptr, nullptr);
+    if (window == nullptr) {
+        printf("Failed to create GLFW window\n");
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    const int version = gladLoadGL(glfwGetProcAddress);
+    if (version == 0) {
+        printf("Failed to initialize GLAD\n");
+        return -1;
+    }
+
+    printf("OpenGL %d.%d\n", GLAD_VERSION_MAJOR(version), GLAD_VERSION_MINOR(version));
+
+    // Load shaders from files
+    GLuint renderProgram = createShaderProgramFromFiles("shaders/vertex.glsl", 
+                                                        "shaders/fragment.glsl");
+    GLuint computeProgram = createComputeProgramFromFile("shaders/compute.glsl");
+
+    if (renderProgram == 0 || computeProgram == 0) {
+        printf("Failed to create shader programs\n");
+        return -1;
+    }
+
+    // Create texture and renderer
+    RayTexture rayTexture = createRayTexture(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT);
+    QuadRenderer quadRenderer;
+
+    while (!glfwWindowShouldClose(window)) {
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        
+        processInput(window, rayTexture.id, width, height);
+
+        // === Compute Pass: Generate ray traced image ===
+        dispatchComputeShader(computeProgram, rayTexture.id, width, height);
+
+        // === Render Pass: Display the texture on the quad ===
+        glClear(GL_COLOR_BUFFER_BIT);
+        glUseProgram(renderProgram);
+
+        // Bind texture for sampling
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, rayTexture.id);
+
+        // Draw the fullscreen quad
+        quadRenderer.render();
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    // Cleanup
+    destroyRayTexture(rayTexture);
+    glDeleteProgram(renderProgram);
+    glDeleteProgram(computeProgram);
+
+    glfwTerminate();
+    return 0;
+}
+
+void processInput(GLFWwindow* window, GLuint texture, int width, int height) {
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, 1);
+
+    static bool sKeyWasPressed = false;
+    bool sKeyIsPressed = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
+    if (sKeyIsPressed && !sKeyWasPressed) {
+        const char* filename = generateTimestampedFilename("raypulse", ".exr");
+        saveToEXR(texture, width, height, filename);
+    }
+    sKeyWasPressed = sKeyIsPressed;
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    (void)window;
+    glViewport(0, 0, width, height);
+}
+```
+
+=== .\src\renderer.cpp ===
+```
+#include "renderer.h"
+
+QuadRenderer::QuadRenderer() {
+    QuadVertex quadVertices[] = {
+        // First triangle
+        {{-1.0f, 1.0f}, {0.0f, 1.0f}},   // Top-left
+        {{-1.0f, -1.0f}, {0.0f, 0.0f}},  // Bottom-left
+        {{1.0f, -1.0f}, {1.0f, 0.0f}},   // Bottom-right
+        // Second triangle
+        {{-1.0f, 1.0f}, {0.0f, 1.0f}},   // Top-left
+        {{1.0f, -1.0f}, {1.0f, 0.0f}},   // Bottom-right
+        {{1.0f, 1.0f}, {1.0f, 1.0f}}     // Top-right
+    };
+    
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    
+    // Position attribute (location = 0)
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(QuadVertex),
+                          reinterpret_cast<void*>(offsetof(QuadVertex, position)));
+    glEnableVertexAttribArray(0);
+    
+    // TexCoord attribute (location = 1)
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(QuadVertex),
+                          reinterpret_cast<void*>(offsetof(QuadVertex, texCoord)));
+    glEnableVertexAttribArray(1);
+}
+
+QuadRenderer::~QuadRenderer() {
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+}
+
+void QuadRenderer::render() {
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+void dispatchComputeShader(GLuint program, GLuint texture, int width, int height) {
+    glUseProgram(program);
+    
+    // Bind texture as image for writing
+    glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    
+    // Set resolution uniform
+    glUniform2f(glGetUniformLocation(program, "resolution"), 
+                static_cast<GLfloat>(width), static_cast<GLfloat>(height));
+    
+    // Dispatch compute shader
+    // Calculate number of work groups needed: ceil to next multiple of 16
+    glDispatchCompute((width + 15) / 16, (height + 15) / 16, 1);
+    
+    // Ensure compute shader has finished
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+}
+```
+
+=== .\src\shader.cpp ===
+```
+#include "shader.h"
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+GLuint compileShader(GLenum type, const GLchar* source) {
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &source, nullptr);
+    glCompileShader(shader);
+
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        GLchar infoLog[512];
+        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+        std::cerr << "ERROR::SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
+    }
+    return shader;
+}
+
+GLuint compileShaderFromFile(GLenum type, const char* filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open shader file: " << filepath << std::endl;
+        return 0;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string source = buffer.str();
+
+    return compileShader(type, source.c_str());
+}
+
+GLuint createShaderProgram(const GLchar* vertexSource, const GLchar* fragmentSource) {
+    GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource);
+    GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSource);
+
+    GLuint shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    GLint success;
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if (!success) {
+        GLchar infoLog[512];
+        glGetProgramInfoLog(shaderProgram, 512, nullptr, infoLog);
+        std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return shaderProgram;
+}
+
+GLuint createShaderProgramFromFiles(const char* vertPath, const char* fragPath) {
+    GLuint vertexShader = compileShaderFromFile(GL_VERTEX_SHADER, vertPath);
+    GLuint fragmentShader = compileShaderFromFile(GL_FRAGMENT_SHADER, fragPath);
+
+    if (vertexShader == 0 || fragmentShader == 0) {
+        return 0;
+    }
+
+    GLuint shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    GLint success;
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if (!success) {
+        GLchar infoLog[512];
+        glGetProgramInfoLog(shaderProgram, 512, nullptr, infoLog);
+        std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return shaderProgram;
+}
+
+GLuint createComputeProgram(const GLchar* computeSource) {
+    GLuint computeShader = compileShader(GL_COMPUTE_SHADER, computeSource);
+
+    GLuint program = glCreateProgram();
+    glAttachShader(program, computeShader);
+    glLinkProgram(program);
+
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        std::cerr << "ERROR::COMPUTE_SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(computeShader);
+    return program;
+}
+
+GLuint createComputeProgramFromFile(const char* compPath) {
+    GLuint computeShader = compileShaderFromFile(GL_COMPUTE_SHADER, compPath);
+
+    if (computeShader == 0) {
+        return 0;
+    }
+
+    GLuint program = glCreateProgram();
+    glAttachShader(program, computeShader);
+    glLinkProgram(program);
+
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        std::cerr << "ERROR::COMPUTE_SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(computeShader);
+    return program;
+}
+```
+
+=== .\src\texture.cpp ===
+```
+#include "texture.h"
+
+RayTexture createRayTexture(int width, int height) {
+    RayTexture tex;
+    tex.width = width;
+    tex.height = height;
+    
+    glGenTextures(1, &tex.id);
+    glBindTexture(GL_TEXTURE_2D, tex.id);
+    
+    // Allocate storage - RGBA with 32-bit floats per channel
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+    
+    // Set texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    
+    return tex;
+}
+
+void resizeRayTexture(RayTexture& texture, int newWidth, int newHeight) {
+    texture.width = newWidth;
+    texture.height = newHeight;
+    
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, newWidth, newHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
+}
+
+void destroyRayTexture(RayTexture& texture) {
+    glDeleteTextures(1, &texture.id);
+    texture.id = 0;
+}
+```
+
+
+
+=== .\shaders\compute.glsl ===
+```
+#version 460 core
+
+// Work group size (16x16 = 256 threads per group)
+layout (local_size_x = 16, local_size_y = 16) in;
+
+// Output image binding
+layout (rgba32f, binding = 0) uniform image2D outputImage;
+
+// Uniforms
+uniform vec2 resolution;
+
+void main()
+{
+    // Get the pixel coordinates for this thread
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+
+    // Bounds check
+    if (pixelCoords.x >= int(resolution.x) || pixelCoords.y >= int(resolution.y)) {
+        return;
+    }
+
+    // Convert pixel coordinates to normalized device coordinates (NDC) [-1, 1]
+    // Add 0.5 to sample at the pixel center
+    vec2 uv = (vec2(pixelCoords) + 0.5) / resolution; // [0, 1]
+    vec2 ndc = uv * 2.0 - 1.0;                        // [-1, 1]
+
+    // Adjust for aspect ratio
+    float aspectRatio = resolution.x / resolution.y;
+    ndc.x *= aspectRatio;
+
+    // Camera setup: at origin, looking down -Z
+    // TODO: Implement adjustable camera
+    vec3 rayOrigin = vec3(0.0, 0.0, 0.0);
+
+    // Ray direction through this pixel
+    // Assume focal length = 1.0 (the z component)
+    vec3 rayDir = normalize(vec3(ndc, -1.0));
+
+    // Reference vector pointing down -Z
+    vec3 refVector = vec3(0.0, 0.0, -1.0);
+
+    // Calculate angle using dot product
+    // dot(a,b) = |a||b|cos(theta) => theta = acos(dot(a,b)/(|a||b|)), |a|=|b|=1 since normalized
+    float cosTheta = dot(rayDir, refVector);
+    float angle = acos(cosTheta); // in radians
+
+    float cornerDist = length(vec2(aspectRatio, 1.0)); // Distance from center in NDC space
+    // Map angle to color
+    // Angles range from 0 (center, parallel) to ~1.57 radians (90°, edges)
+    float maxAngle = atan(cornerDist / 1.0); // FOV dependent max angle
+    float t = clamp(angle / maxAngle, 0.0, 1.0);
+
+    // Color gradient from blue (center) to red (edges)
+    vec3 color1 = vec3(0.1, 0.1, 0.8); // Blue
+    vec3 color2 = vec3(0.8, 0.1, 0.1); // Red
+    vec3 color = mix(color1, color2, t);
+
+    // Write the color to the output image
+    imageStore(outputImage, pixelCoords, vec4(color, 1.0));
+}
+```
+
+=== .\shaders\fragment.glsl ===
+```
+#version 460 core
+out vec4 FragColor;
+in vec2 TexCoord;
+
+uniform sampler2D rayTexture;
+
+void main()
+{
+    FragColor = texture(rayTexture, TexCoord);
+}
+```
+
+=== .\shaders\vertex.glsl ===
+```
+#version 460 core
+layout (location = 0) in vec2 aPos;
+layout (location = 1) in vec2 aTexCoord;
+
+out vec2 TexCoord;
+
+void main()
+{
+    gl_Position = vec4(aPos, 0.0, 1.0);
+    TexCoord = aTexCoord;
+}
+```
+
+
+
+=== .\include\export.h ===
+```
+#pragma once
+#include <glad/gl.h>
+
+void saveToEXR(GLuint texture, int width, int height, const char* filename);
+const char* generateTimestampedFilename(const char* prefix, const char* extension);
+```
+
+=== .\include\renderer.h ===
+```
+#pragma once
+#include <glad/gl.h>
+#include <glm/glm.hpp>
+
+struct QuadVertex {
+    glm::vec2 position;
+    glm::vec2 texCoord;
+};
+
+class QuadRenderer {
+public:
+    QuadRenderer();
+    ~QuadRenderer();
+    
+    void render();
+    GLuint getVAO() const { return VAO; }
+    
+private:
+    GLuint VAO;
+    GLuint VBO;
+};
+
+void dispatchComputeShader(GLuint program, GLuint texture, int width, int height);
+```
+
+=== .\include\shader.h ===
+```
+#pragma once
+#include <glad/gl.h>
+
+GLuint compileShader(GLenum type, const GLchar* source);
+GLuint compileShaderFromFile(GLenum type, const char* filepath);
+GLuint createShaderProgram(const GLchar* vertexSource, const GLchar* fragmentSource);
+GLuint createShaderProgramFromFiles(const char* vertPath, const char* fragPath);
+GLuint createComputeProgram(const GLchar* computeSource);
+GLuint createComputeProgramFromFile(const char* compPath);
+```
+
+=== .\include\texture.h ===
+```
+#pragma once
+#include <glad/gl.h>
+
+struct RayTexture {
+    GLuint id;
+    int width;
+    int height;
+};
+
+RayTexture createRayTexture(int width, int height);
+void resizeRayTexture(RayTexture& texture, int newWidth, int newHeight);
+void destroyRayTexture(RayTexture& texture);
+```
+
+=== .\meson.build ===
+```
+project(
+    'raypulse',
+    ['c', 'cpp'],
+    meson_version : '>= 1.3.0',
+    version : '0.1',
+    default_options : [
+        'warning_level=3'
+    ],
+)
+
+c_compiler = meson.get_compiler('c')
+
+if c_compiler.get_id() == 'clang-cl'
+    add_project_arguments('-Wno-c23-extensions', language : 'c')
+endif
+
+lib_include_dir = include_directories('../libraries/include')
+prj_include_dir = include_directories('include')
+
+glad_src = '../libraries/src/glad.c'
+glfw_lib = '../libraries/lib/glfw3.lib'
+glm_lib = '../libraries/lib/glm.lib'
+
+glm_include_dir = include_directories('../libraries/include/glm')
+imath_include_dir = include_directories('../libraries/include/Imath')
+
+lib_dir = meson.current_source_dir() / '../libraries/lib'
+
+glad_dep = declare_dependency(
+    sources : files(glad_src),
+    include_directories : lib_include_dir
+)
+
+glfw_dep = declare_dependency(
+    dependencies : [meson.get_compiler('c').find_library('glfw3_mt', dirs : lib_dir)],
+    include_directories : lib_include_dir
+)
+
+glm_dep = declare_dependency(
+    dependencies : [meson.get_compiler('cpp').find_library('glm', dirs : lib_dir)],
+    include_directories : glm_include_dir
+)
+
+openexr_libs = [
+    'OpenEXR-3_4',
+    'OpenEXRCore-3_4',
+    'OpenEXRUtil-3_4',
+    'Iex-3_4',
+    'IlmThread-3_4',
+    'Imath-3_2',       # Core math library
+    'openjph.0.24',    # JPEG 2000 compression
+]
+
+openexr_dep_list = []
+foreach lib_name : openexr_libs
+    openexr_dep_list += meson.get_compiler('cpp').find_library(lib_name, dirs : lib_dir)
+endforeach
+
+openexr_dep = declare_dependency(
+    dependencies : openexr_dep_list,
+    include_directories : lib_include_dir
+)
+
+# Define the list of DLLs base names
+openexr_dlls = [
+    'OpenEXR-3_4.dll',
+    'OpenEXRCore-3_4.dll',
+    'Iex-3_4.dll',
+    'IlmThread-3_4.dll',
+    'Imath-3_2.dll',
+    'openjph.0.24.dll',
+]
+
+# --- DLL COPY SETUP ---
+
+# 1. Source files for install_data (DLLs are physically located in ../libraries/lib/)
+full_dll_paths = []
+foreach dll_name : openexr_dlls
+    full_dll_paths += '..//libraries/lib/' + dll_name
+endforeach
+
+# 2. Add glfw3.dll to the list of DLLs that need copying
+all_runtime_dlls = openexr_dlls + ['glfw3.dll']
+
+# 3. Define the directory paths for the custom target
+powershell_cmd = find_program('powershell')
+# Source: points to the 'lib' folder where all DLLs are now located
+dll_source_dir = '../../libraries/lib/*'
+# Destination: the build root (where the executable is)
+dll_target_dir = './'
+
+
+# Install the DLLs during the install step
+install_data(
+    sources: files(full_dll_paths),
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
+
+# For running *during* development (the actual runtime fix)
+custom_target('copy_runtime_dlls',
+              # Input list is used for dependency tracking
+              input: files(full_dll_paths, '../libraries/lib/glfw3.dll'),
+
+              # Output is the list of ALL base DLL names
+              output: all_runtime_dlls,
+
+              # FIX: Use Copy-Item with explicit path variables
+              command: [powershell_cmd,
+                        '-Command',
+                        'Copy-Item',
+                        '-Path', dll_source_dir,
+                        '-Destination', dll_target_dir,
+                        '-Include', '*.dll',
+                        '-Recurse',
+                        '-Force'
+              ],
+              build_by_default: true
+)
+
+
+dependencies = [
+    glad_dep,
+    glfw_dep,
+    glm_dep,
+    openexr_dep,
+    dependency('opengl')
+]
+
+
+executable(
+    'main',
+    ['src/main.cpp','src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp'],
+    dependencies : dependencies,
+    include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir],
+    install : true
+)
+```
