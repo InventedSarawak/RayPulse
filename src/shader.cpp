@@ -4,6 +4,25 @@
 #include <sstream>
 #include <string>
 
+std::vector<char> readBinaryFile(const char* filename) {
+    // open with std::ios::ate to jump to end and get size
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+    if (!file.is_open()) {
+        std::cerr << "Failed to open binary shader: " << filename << std::endl;
+        return {};
+    }
+
+    size_t fileSize = (size_t)file.tellg();
+    std::vector<char> buffer(fileSize);
+
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+    file.close();
+
+    return buffer;
+}
+
 GLuint compileShader(GLenum type, const GLchar* source) {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, nullptr);
@@ -83,44 +102,43 @@ GLuint createShaderProgramFromFiles(const char* vertPath, const char* fragPath) 
     return shaderProgram;
 }
 
-GLuint createComputeProgram(const GLchar* computeSource) {
-    GLuint computeShader = compileShader(GL_COMPUTE_SHADER, computeSource);
+GLuint createComputeProgramFromBinary(const char* binaryPath) {
+    std::vector<char> spirv = readBinaryFile(binaryPath);
+    if (spirv.empty()) return 0;
 
-    GLuint program = glCreateProgram();
-    glAttachShader(program, computeShader);
-    glLinkProgram(program);
+    // 1. Create Shader Object
+    GLuint shader = glCreateShader(GL_COMPUTE_SHADER);
 
+    // 2. Load Binary (Instead of glShaderSource)
+    // GL_SHADER_BINARY_FORMAT_SPIR_V is part of OpenGL 4.6
+    glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V, spirv.data(), (GLsizei)spirv.size());
+
+    // 3. Specialize (Compile/Link inside driver)
+    // The "main" here refers to the function name void main() in GLSL
+    glSpecializeShader(shader, "main", 0, nullptr, nullptr);
+
+    // Check for Errors (Specialize is where compilation actually happens for the driver)
     GLint success;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
     if (!success) {
         char infoLog[512];
-        glGetProgramInfoLog(program, 512, nullptr, infoLog);
-        std::cerr << "ERROR::COMPUTE_SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
-    }
-
-    glDeleteShader(computeShader);
-    return program;
-}
-
-GLuint createComputeProgramFromFile(const char* compPath) {
-    GLuint computeShader = compileShaderFromFile(GL_COMPUTE_SHADER, compPath);
-
-    if (computeShader == 0) {
+        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+        std::cerr << "ERROR::SHADER::SPIRV::COMPILATION_FAILED\n" << infoLog << std::endl;
         return 0;
     }
 
+    // 4. Create Program (Same as before)
     GLuint program = glCreateProgram();
-    glAttachShader(program, computeShader);
+    glAttachShader(program, shader);
     glLinkProgram(program);
 
-    GLint success;
     glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
         char infoLog[512];
         glGetProgramInfoLog(program, 512, nullptr, infoLog);
-        std::cerr << "ERROR::COMPUTE_SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+        std::cerr << "ERROR::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
     }
 
-    glDeleteShader(computeShader);
+    glDeleteShader(shader);
     return program;
 }

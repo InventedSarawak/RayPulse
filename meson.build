@@ -59,8 +59,8 @@ openexr_libs = [
     'OpenEXRUtil-3_4',
     'Iex-3_4',
     'IlmThread-3_4',
-    'Imath-3_2',       # Core math library
-    'openjph.0.24',    # JPEG 2000 compression
+    'Imath-3_2', # Core math library
+    'openjph.0.24', # JPEG 2000 compression
 ]
 
 openexr_dep_list = []
@@ -104,33 +104,51 @@ dll_target_dir = './'
 
 # Install the DLLs during the install step
 install_data(
-    sources: files(full_dll_paths),
-    install_dir: get_option('bindir'),
-    install_mode: 'rwxr-xr-x'
+    sources : files(full_dll_paths),
+    install_dir : get_option('bindir'),
+    install_mode : 'rwxr-xr-x'
 )
 
 
 # For running *during* development (the actual runtime fix)
-custom_target('copy_runtime_dlls',
-              # Input list is used for dependency tracking
-              input: files(full_dll_paths, '../libraries/lib/glfw3.dll'),
+copy_runtime_dlls = custom_target('copy_runtime_dlls',
+                                  # Input list is used for dependency tracking
+                                  input : files(full_dll_paths, '../libraries/lib/glfw3.dll'),
 
-              # Output is the list of ALL base DLL names
-              output: all_runtime_dlls,
+                                  # Output is the list of ALL base DLL names
+                                  output : all_runtime_dlls,
+                                  build_always_stale : true,
 
-              # FIX: Use Copy-Item with explicit path variables
-              command: [powershell_cmd,
-                        '-Command',
-                        'Copy-Item',
-                        '-Path', dll_source_dir,
-                        '-Destination', dll_target_dir,
-                        '-Include', '*.dll',
-                        '-Recurse',
-                        '-Force'
-              ],
-              build_by_default: true
+                                  # FIX: Use Copy-Item with explicit path variables
+                                  command : [powershell_cmd,
+                                             '-Command',
+                                             'Copy-Item',
+                                             '-Path', dll_source_dir,
+                                             '-Destination', dll_target_dir,
+                                             '-Include', '*.dll',
+                                             '-Recurse',
+                                             '-Force'
+                                  ]
 )
 
+glslc = find_program('glslc', required : true)
+
+compute_shader_spv = custom_target('compile_compute_shader',
+                                   input : 'shaders/compute/main.glsl',
+                                   output : 'main.spv',
+                                   command : [
+                                       glslc,
+                                       '-fshader-stage=compute',
+                                       '--target-env=opengl',
+                                       '-fauto-map-locations', # Fixes the layout(location) errors
+                                       '-g',
+                                       '@INPUT@',
+                                       '-o', '@OUTPUT@'
+                                   ],
+                                   build_always_stale : true,
+                                   install : true,
+                                   install_dir : get_option('bindir') # Install next to the executable
+)
 
 dependencies = [
     glad_dep,
@@ -143,8 +161,10 @@ dependencies = [
 
 executable(
     'main',
-    ['src/main.cpp','src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp'] + imgui_sources,
+    ['src/main.cpp', 'src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp']
+    + imgui_sources,
     dependencies : dependencies,
     include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir, imgui_include_dir],
+    link_depends : [compute_shader_spv, copy_runtime_dlls],
     install : true
 )

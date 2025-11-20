@@ -1,13 +1,15 @@
 #version 460 core
+#extension GL_GOOGLE_include_directive : require
 
-// Work group size (16x16 = 256 threads per group)
+#include "camera.glsl"
+#include "hittable.glsl"
+
 layout (local_size_x = 16, local_size_y = 16) in;
-
-// Output image binding
 layout (rgba32f, binding = 0) uniform image2D outputImage;
 
-// Uniforms
-uniform vec2 resolution;
+// Sky Rendering Parameters
+uniform vec3 skyColorTop;
+uniform vec3 skyColorBottom;
 
 void main()
 {
@@ -28,15 +30,18 @@ void main()
     float aspectRatio = resolution.x / resolution.y;
     ndc.x *= aspectRatio;
 
-    // Camera setup: at origin, looking down -Z
-    // TODO: Implement adjustable camera
-    vec3 rayOrigin = vec3(0.0, 0.0, 0.0);
+    float fovRadians = radians(cameraFOV);
+    float planeScale = tan(fovRadians * 0.5);
+
+    vec3 rayOrigin = cameraOrigin;
 
     // Ray direction through this pixel
-    // Assume focal length = 1.0 (the z component)
-    vec3 rayDir = normalize(vec3(ndc, -1.0));
+    vec3 rayDir = normalize(cameraForward +
+                            (ndc.x * planeScale * cameraRight) +
+                            (ndc.y * planeScale * cameraUp));
 
-    /*// Reference vector pointing down -Z
+    /*
+    // Reference vector pointing down -Z
     vec3 refVector = vec3(0.0, 0.0, -1.0);
 
     // Calculate angle using dot product
@@ -53,15 +58,20 @@ void main()
     // Color gradient from blue (center) to red (edges)
     vec3 color1 = vec3(0.1, 0.1, 0.8); // Blue
     vec3 color2 = vec3(0.8, 0.1, 0.1); // Red
-    vec3 color = mix(color1, color2, t);*/
+    vec3 color = mix(color1, color2, t);
+    */
 
-    vec3 colorBottom = vec3(0.98, 0.98, 0.98);
-    vec3 colorTop = vec3(0.5, 0.7, 1.0);
+    HitRecord rec;
+    vec3 color;
 
-    // Blending factor: map ray.y from [-1, 1] to [0, 1]
-    float blendingFactor = 0.5 * (rayDir.y + 1.0);
-
-    vec3 color = mix(colorBottom, colorTop, blendingFactor);
+    if (hitWorld(rayOrigin, rayDir, 0.001, INFINITY, rec)) {
+        // Visualize Normal for now
+        color = 0.5 * (rec.normal + vec3(1.0));
+    } else {
+        // Blending factor: map ray.y from [-1, 1] to [0, 1]
+        float blendingFactor = 0.5 * (rayDir.y + 1.0);
+        color = mix(skyColorBottom, skyColorTop, blendingFactor);
+    }
 
     // Write the color to the output image
     imageStore(outputImage, pixelCoords, vec4(color, 1.0));
