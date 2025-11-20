@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstdint>
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -122,14 +123,32 @@ int main() {
     QuadRenderer quadRenderer;
 
     SceneBuffer sceneBuffer;
+    MaterialBuffer materialBuffer;
     std::vector<GPUObject> objects;
+    std::vector<GPUMaterial> materials;
 
-    objects.push_back(makeSphere(glm::vec3(0.0f, 0.0f, -1.0f), 0.5f));      // Center
-    objects.push_back(makeSphere(glm::vec3(0.0f, -100.5f, -1.0f), 100.0f)); // The Floor
-    objects.push_back(makeSphere(glm::vec3(-1.0f, 0.0f, -1.0f), 0.5f));     // Left
+    const int groundMat = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.4f, 0.8f, 0.37f)));
+
+    const int leftMat = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Metal(glm::vec3(0.8f, 0.85f, 0.88f), 0.15f));
+
+    const int centerMat = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.7f, 0.3f, 0.3f)));
+
+    const int rightMat = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Dielectric(1.2f));
+    materials.at(rightMat).albedo = glm::vec3(0.7f, 0.7f, 0.7f);
+
+    objects.push_back(makePlane(glm::vec3(0.0f, 1.0f, 0.0f), 0.01f, groundMat));
+    objects.push_back(makeSphere(glm::vec3(-0.6f, 0.5f, -2.0f), 0.55f, leftMat));
+    objects.push_back(makeSphere(glm::vec3(0.4f, 0.5f, -2.5f), 0.43f, centerMat));
+    objects.push_back(makeSphere(glm::vec3(0.0f, 0.5f, -1.0f), 0.5f, rightMat));
 
     sceneBuffer.update(objects);
     sceneBuffer.bind(1);
+    materialBuffer.update(materials);
+    materialBuffer.bind(2);
 
     // Create UI Cache (Tracks Window Size)
     GLuint uiFBO = 0;
@@ -150,6 +169,7 @@ int main() {
                            camera_params.forward, camera_params.right, camera_params.up);
 
     int samplesPerPixel = 4;
+    int maxBounces = 8;
 
     SkyParams sky_params = {glm::vec3{0.5, 0.7, 1.0}, glm::vec3{0.98, 0.98, 0.98}};
 
@@ -175,9 +195,11 @@ int main() {
         }
 
         if (isRendering) {
+            sceneBuffer.bind(1);
+            materialBuffer.bind(2);
             glBeginQuery(GL_TIME_ELAPSED, timeQuery);
             dispatchComputeShader(computeProgram, rayTexture.id, raytracer_dimensions,
-                camera_params, sky_params, objects.size(), samplesPerPixel);
+                camera_params, sky_params, objects.size(), samplesPerPixel, static_cast<uint32_t>(maxBounces));
             glEndQuery(GL_TIME_ELAPSED);
             camera_params.frameCount += 1;
             glGetQueryObjectui64v(timeQuery, GL_QUERY_RESULT, &elapsedNanoseconds);
@@ -221,18 +243,24 @@ int main() {
                 if (ImGui::Button("Set Resolution")) {
                     if (targetRenderWidth > 0 && targetRenderHeight > 0) {
                         resizeRayTexture(rayTexture, targetRenderWidth, targetRenderHeight);
-                        // Trigger a re-render immediately
+                        camera_params.frameCount = 0;
                         dispatchComputeShader(computeProgram, rayTexture.id,
                             {targetRenderWidth, targetRenderHeight},
-                            camera_params, sky_params, objects.size(), samplesPerPixel);
+                            camera_params, sky_params, objects.size(), samplesPerPixel, static_cast<uint32_t>(maxBounces));
                     }
                 }
 
                 if (ImGui::CollapsingHeader("Anti-Aliasing", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 16);
+                    if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 16)) {
+                        camera_params.frameCount = 0;
+                    }
                     ImGui::Text("1 = No AA, 4 = Good, 8+ = Excellent");
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Higher values = smoother edges but slower rendering");
+                    }
+
+                    if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 32)) {
+                        camera_params.frameCount = 0;
                     }
                 }
             }
@@ -289,6 +317,9 @@ int main() {
             if (ImGui::Button("Save .exr")) {
                 const char* filename = generateTimestampedFilename("raypulse", ".exr");
                 saveToEXR(rayTexture.id, rayTexture.width, rayTexture.height, filename);
+            }
+            if (ImGui::Button("Reset Accumulation")) {
+                camera_params.frameCount = 0;
             }
             ImGui::End();
 

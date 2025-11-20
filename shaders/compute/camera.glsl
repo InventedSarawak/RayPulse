@@ -10,3 +10,4 @@ uniform float cameraFOV;
 
 uniform uint frameCount;
 uniform int samplesPerPixel;
+uniform uint maxBounces;

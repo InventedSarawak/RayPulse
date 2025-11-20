@@ -3,6 +3,8 @@
 #include <glad/gl.h>
 #include <glm/glm.hpp>
 
+#include "material.h"
+
 struct QuadVertex {
     glm::vec2 position;
     glm::vec2 texCoord;
@@ -64,7 +66,19 @@ public:
     void bind(GLuint bindingPoint) const;
 
 private:
-    GLuint ssbo;
+    GLuint ssbo{};
+};
+
+class MaterialBuffer {
+public:
+    MaterialBuffer();
+    ~MaterialBuffer();
+
+    void update(const std::vector<GPUMaterial>& materials) const;
+    void bind(GLuint bindingPoint) const;
+
+private:
+    GLuint ssbo{};
 };
 
 typedef struct{
@@ -86,4 +100,4 @@ typedef struct{
 } SkyParams;
 
 void dispatchComputeShader(GLuint program, GLuint texture, RaytracerDimensions raytracer_dimensions,
-    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel);
+    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel, uint32_t maxBounces);

@@ -4,6 +4,7 @@
 #include "camera.glsl"
 #include "hittable.glsl"
 #include "random.glsl"
+#include "material.glsl"
 
 layout (local_size_x = 16, local_size_y = 16) in;
 layout (rgba32f, binding = 0) uniform image2D outputImage;
@@ -12,17 +13,61 @@ layout (rgba32f, binding = 0) uniform image2D outputImage;
 uniform vec3 skyColorTop;
 uniform vec3 skyColorBottom;
 
-vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
-    HitRecord rec;
+vec3 sampleSky(vec3 rayDir) {
+    float t = 0.5 * (rayDir.y + 1.0);
+    return mix(skyColorBottom, skyColorTop, t);
+}
 
-    if (hitWorld(rayOrigin, rayDir, 0.001, INFINITY, rec)) {
-        // Visualize Normal
-        return 0.5 * (rec.normal + vec3(1.0));
-    } else {
-        // Blending factor: map ray.y from [-1, 1] to [0, 1]
-        float blendingFactor = 0.5 * (rayDir.y + 1.0);
-        return mix(skyColorBottom, skyColorTop, blendingFactor);
+vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
+    vec3 throughput = vec3(1.0);  // Accumulated light attenuation
+    vec3 radiance = vec3(0.0);     // Accumulated emitted light
+
+    vec3 currentOrigin = rayOrigin;
+    vec3 currentDir = rayDir;
+
+    for (uint bounce = 0u; bounce < maxBounces; ++bounce) {
+        HitRecord rec;
+
+        if (hitWorld(currentOrigin, currentDir, 0.001, INFINITY, rec)) {
+            // Fetch the material
+            Material mat = materials[rec.matIndex];
+
+            // Add emission from this surface
+            // This is the KEY FIX: emissive materials contribute light at every bounce
+            radiance += throughput * mat.emission;
+
+            // Try to scatter the ray
+            vec3 attenuation;
+            vec3 scattered;
+
+            if (scatter(mat, currentDir, rec, attenuation, scattered)) {
+                // Ray scattered - update throughput and continue
+                throughput *= attenuation;
+                currentOrigin = rec.p;
+                currentDir = scattered;
+
+                // Russian Roulette path termination (optional but recommended)
+                // Randomly terminate paths that contribute little
+                if (bounce > 3) {
+                    float maxComponent = max(throughput.r, max(throughput.g, throughput.b));
+                    if (randomFloat() > maxComponent) {
+                        break; // Terminate this path early
+                    }
+                    // Boost remaining paths to maintain energy conservation
+                    throughput /= maxComponent;
+                }
+            } else {
+                // Ray absorbed (hit a pure light source or was absorbed)
+                break;
+            }
+        } else {
+            // Ray escaped to sky
+            radiance += throughput * sampleSky(currentDir);
+            break;
+        }
     }
+
+    return radiance;
 }
 
 void main()
@@ -63,6 +108,7 @@ void main()
         colorAccumulator += traceRay(rayOrigin, rayDir);
     }
 
+    // finalColor = pow(finalColor, vec3(1.0 / 2.2));
     vec3 finalColor = colorAccumulator / float(samplesPerPixel);
 
 /*

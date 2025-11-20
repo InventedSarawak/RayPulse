@@ -63,8 +63,32 @@ void SceneBuffer::bind(GLuint bindingPoint) const {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, ssbo);
 }
 
+MaterialBuffer::MaterialBuffer() {
+    glGenBuffers(1, &ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+MaterialBuffer::~MaterialBuffer() {
+    glDeleteBuffers(1, &ssbo);
+}
+
+void MaterialBuffer::update(const std::vector<GPUMaterial>& materials) const {
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+                 materials.size() * sizeof(GPUMaterial),
+                 materials.data(),
+                 GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void MaterialBuffer::bind(GLuint bindingPoint) const {
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, ssbo);
+}
+
 void dispatchComputeShader(const GLuint program, const GLuint texture, const RaytracerDimensions raytracer_dimensions,
-    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel) {
+    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel, uint32_t maxBounces) {
     glUseProgram(program);
     
     // Bind texture as image for writing
@@ -84,9 +108,9 @@ void dispatchComputeShader(const GLuint program, const GLuint texture, const Ray
     glUniform3fv(glGetUniformLocation(program, "skyColorBottom"), 1, &sky_params.colorBottom[0]);
 
     glUniform1i(glGetUniformLocation(program, "objectCount"), static_cast<GLint>(objectCount));
-
     glUniform1ui(glGetUniformLocation(program, "frameCount"), camera_params.frameCount);
     glUniform1i(glGetUniformLocation(program, "samplesPerPixel"), samplesPerPixel);
+    glUniform1ui(glGetUniformLocation(program, "maxBounces"), maxBounces);
 
     // Dispatch compute shader
     // Calculate number of work groups needed: ceil to next multiple of 16
