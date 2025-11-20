@@ -64,7 +64,7 @@ void SceneBuffer::bind(GLuint bindingPoint) const {
 }
 
 void dispatchComputeShader(const GLuint program, const GLuint texture, const RaytracerDimensions raytracer_dimensions,
-    CameraParams camera_params, SkyParams sky_params, size_t objectCount) {
+    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel) {
     glUseProgram(program);
     
     // Bind texture as image for writing
@@ -84,6 +84,9 @@ void dispatchComputeShader(const GLuint program, const GLuint texture, const Ray
     glUniform3fv(glGetUniformLocation(program, "skyColorBottom"), 1, &sky_params.colorBottom[0]);
 
     glUniform1i(glGetUniformLocation(program, "objectCount"), static_cast<GLint>(objectCount));
+
+    glUniform1ui(glGetUniformLocation(program, "frameCount"), camera_params.frameCount);
+    glUniform1i(glGetUniformLocation(program, "samplesPerPixel"), samplesPerPixel);
 
     // Dispatch compute shader
     // Calculate number of work groups needed: ceil to next multiple of 16

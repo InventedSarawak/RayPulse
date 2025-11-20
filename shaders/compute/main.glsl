@@ -1,8 +1,9 @@
 #version 460 core
-#extension GL_GOOGLE_include_directive : require
+#extension GL_GOOGLE_include_directive: require
 
 #include "camera.glsl"
 #include "hittable.glsl"
+#include "random.glsl"
 
 layout (local_size_x = 16, local_size_y = 16) in;
 layout (rgba32f, binding = 0) uniform image2D outputImage;
@@ -10,6 +11,19 @@ layout (rgba32f, binding = 0) uniform image2D outputImage;
 // Sky Rendering Parameters
 uniform vec3 skyColorTop;
 uniform vec3 skyColorBottom;
+
+vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
+    HitRecord rec;
+
+    if (hitWorld(rayOrigin, rayDir, 0.001, INFINITY, rec)) {
+        // Visualize Normal
+        return 0.5 * (rec.normal + vec3(1.0));
+    } else {
+        // Blending factor: map ray.y from [-1, 1] to [0, 1]
+        float blendingFactor = 0.5 * (rayDir.y + 1.0);
+        return mix(skyColorBottom, skyColorTop, blendingFactor);
+    }
+}
 
 void main()
 {
@@ -21,26 +35,37 @@ void main()
         return;
     }
 
-    // Convert pixel coordinates to normalized device coordinates (NDC) [-1, 1]
-    // Add 0.5 to sample at the pixel center
-    vec2 uv = (vec2(pixelCoords) + 0.5) / resolution; // [0, 1]
-    vec2 ndc = uv * 2.0 - 1.0;                        // [-1, 1]
+    initRNG(uvec2(pixelCoords), frameCount);
 
-    // Adjust for aspect ratio
-    float aspectRatio = resolution.x / resolution.y;
-    ndc.x *= aspectRatio;
+    vec3 colorAccumulator = vec3(0.0);
 
-    float fovRadians = radians(cameraFOV);
-    float planeScale = tan(fovRadians * 0.5);
+    for (int numSample = 0; numSample < samplesPerPixel; numSample ++) {
+        // Add random jitter within the pixel [0, 1)
+        vec2 jitter = vec2(randomFloat(), randomFloat());
 
-    vec3 rayOrigin = cameraOrigin;
+        // Convert pixel coordinates to normalized device coordinates (NDC) [-1, 1]
+        // Add 0.5 to sample at the pixel center + jitter
+        vec2 uv = (vec2(pixelCoords) + jitter) / resolution; // [0, 1]
+        vec2 ndc = uv * 2.0 - 1.0;                           // [-1, 1]
 
-    // Ray direction through this pixel
-    vec3 rayDir = normalize(cameraForward +
-                            (ndc.x * planeScale * cameraRight) +
-                            (ndc.y * planeScale * cameraUp));
+        // Adjust for aspect ratio
+        float aspectRatio = resolution.x / resolution.y;
+        ndc.x *= aspectRatio;
 
-    /*
+        float fovRadians = radians(cameraFOV);
+        float planeScale = tan(fovRadians * 0.5);
+
+        vec3 rayOrigin = cameraOrigin;
+        vec3 rayDir = normalize(cameraForward +
+        (ndc.x * planeScale * cameraRight) +
+        (ndc.y * planeScale * cameraUp));
+
+        colorAccumulator += traceRay(rayOrigin, rayDir);
+    }
+
+    vec3 finalColor = colorAccumulator / float(samplesPerPixel);
+
+/*
     // Reference vector pointing down -Z
     vec3 refVector = vec3(0.0, 0.0, -1.0);
 
@@ -61,18 +86,6 @@ void main()
     vec3 color = mix(color1, color2, t);
     */
 
-    HitRecord rec;
-    vec3 color;
-
-    if (hitWorld(rayOrigin, rayDir, 0.001, INFINITY, rec)) {
-        // Visualize Normal for now
-        color = 0.5 * (rec.normal + vec3(1.0));
-    } else {
-        // Blending factor: map ray.y from [-1, 1] to [0, 1]
-        float blendingFactor = 0.5 * (rayDir.y + 1.0);
-        color = mix(skyColorBottom, skyColorTop, blendingFactor);
-    }
-
-    // Write the color to the output image
-    imageStore(outputImage, pixelCoords, vec4(color, 1.0));
+// Write the color to the output image
+imageStore(outputImage, pixelCoords, vec4(finalColor, 1.0));
 }

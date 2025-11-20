@@ -77,6 +77,7 @@ typedef struct{
     glm::vec3 right;
     glm::vec3 up;
     float FOV;
+    unsigned int frameCount;
 } CameraParams;
 
 typedef struct{
@@ -85,4 +86,4 @@ typedef struct{
 } SkyParams;
 
 void dispatchComputeShader(GLuint program, GLuint texture, RaytracerDimensions raytracer_dimensions,
-    CameraParams camera_params, SkyParams sky_params, size_t objectCount);
+    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel);

@@ -143,17 +143,16 @@ int main() {
 
     // Scene Params
     bool isRendering = true;
-    auto cameraPos = glm::vec3{0.0f, 0.0f, 0.0f};
     auto cameraRot = glm::vec3{0.0f, 0.0f, 0.0f};
 
-    CameraParams camera_params = {cameraPos, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, 90.0f};
+    CameraParams camera_params = {glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, 90.0f, 0};
     calculateBasisFromEuler(cameraRot[0], cameraRot[1], cameraRot[2],
                            camera_params.forward, camera_params.right, camera_params.up);
 
+    int samplesPerPixel = 4;
+
     SkyParams sky_params = {glm::vec3{0.5, 0.7, 1.0}, glm::vec3{0.98, 0.98, 0.98}};
 
-    float spherePos[3] = {0.0f, 0.0f, -1.0f};
-    float sphereRadius = 0.5f;
 
     // Dynamic UI Interval based on Monitor Hz
     double uiUpdateInterval = 1.0 / static_cast<double>(monitorRefreshRate);
@@ -167,11 +166,8 @@ int main() {
         glfwGetFramebufferSize(window, &winWidth, &winHeight);
 
         // Prepare Raytracer dimensions (for Compute Shader)
-        // Note: We now use rayTexture.width/height, NOT winWidth/winHeight
         RaytracerDimensions raytracer_dimensions = {rayTexture.width, rayTexture.height};
 
-        // Handle UI/Window Resizing
-        // (We only resize the UI buffer when window changes, NOT the rayTexture)
         if (winWidth != currentUIRes.width || winHeight != currentUIRes.height) {
             currentUIRes.width = winWidth;
             currentUIRes.height = winHeight;
@@ -181,8 +177,9 @@ int main() {
         if (isRendering) {
             glBeginQuery(GL_TIME_ELAPSED, timeQuery);
             dispatchComputeShader(computeProgram, rayTexture.id, raytracer_dimensions,
-                camera_params, sky_params, objects.size());
+                camera_params, sky_params, objects.size(), samplesPerPixel);
             glEndQuery(GL_TIME_ELAPSED);
+            camera_params.frameCount += 1;
             glGetQueryObjectui64v(timeQuery, GL_QUERY_RESULT, &elapsedNanoseconds);
         }
 
@@ -227,7 +224,15 @@ int main() {
                         // Trigger a re-render immediately
                         dispatchComputeShader(computeProgram, rayTexture.id,
                             {targetRenderWidth, targetRenderHeight},
-                            camera_params, sky_params, objects.size());
+                            camera_params, sky_params, objects.size(), samplesPerPixel);
+                    }
+                }
+
+                if (ImGui::CollapsingHeader("Anti-Aliasing", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 16);
+                    ImGui::Text("1 = No AA, 4 = Good, 8+ = Excellent");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Higher values = smoother edges but slower rendering");
                     }
                 }
             }
@@ -235,13 +240,28 @@ int main() {
             ImGui::Separator();
             // Camera controls
             if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::DragFloat3("Position", glm::value_ptr(cameraPos), 0.1f);
+                ImGui::DragFloat3("Position", glm::value_ptr(camera_params.pos), 0.1f);
 
                 const float prevRot[3] = {cameraRot[0], cameraRot[1], cameraRot[2]};
 
                 ImGui::SliderFloat("Pitch (X)", &cameraRot[0], -90.0f, 90.0f, "%.1f°");
                 ImGui::SliderFloat("Yaw (Y)", &cameraRot[1], -180.0f, 180.0f, "%.1f°");
                 ImGui::SliderFloat("Roll (Z)", &cameraRot[2], -180.0f, 180.0f, "%.1f°");
+
+                static glm::vec3 prevCameraPos = camera_params.pos;
+                static glm::vec3 prevCameraRot = cameraRot;
+                static float prevFOV = camera_params.FOV;
+
+                bool cameraChanged = (prevCameraPos != camera_params.pos) ||
+                             (prevCameraRot != cameraRot) ||
+                             (prevFOV != camera_params.FOV);
+
+                if (cameraChanged) {
+                    camera_params.frameCount = 0;  // Reset for new view
+                    prevCameraPos = camera_params.pos;
+                    prevCameraRot = cameraRot;
+                    prevFOV = camera_params.FOV;
+                }
 
                 // Check if rotation changed
                 const bool rotationChanged = (prevRot[0] != cameraRot[0]) ||
@@ -257,12 +277,6 @@ int main() {
                 ImGui::SliderFloat("FOV", &camera_params.FOV, 20.0f, 150.0f, "%.1f°");
             }
 
-            // Sphere controls
-            if (ImGui::CollapsingHeader("Sphere", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::DragFloat3("Center", spherePos, 0.1f);
-                ImGui::DragFloat("Radius", &sphereRadius, 0.1f, 0.0f, 2.0f);
-            }
-
             // Sky controls
             if (ImGui::CollapsingHeader("Sky Colors", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::ColorEdit3("Bottom Color", glm::value_ptr(sky_params.colorBottom));
@@ -274,7 +288,6 @@ int main() {
             ImGui::Checkbox("Real-time Rendering", &isRendering);
             if (ImGui::Button("Save .exr")) {
                 const char* filename = generateTimestampedFilename("raypulse", ".exr");
-                // Use actual RayTexture dimensions, not window dimensions
                 saveToEXR(rayTexture.id, rayTexture.width, rayTexture.height, filename);
             }
             ImGui::End();
