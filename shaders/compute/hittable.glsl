@@ -10,7 +10,8 @@ struct HitRecord {
     vec3 p;         // World coordinate of the hit
     vec3 normal;    // Surface normal at that point
     bool frontFace; // Did the ray hit the outside?
-    int matIndex;   // Material ID (for future shading)
+    int matIndex;   // Material ID
+    int objIndex;   // Object ID
 };
 
 // Fits exactly 32 bytes to match std430 alignment
@@ -105,6 +106,7 @@ bool hitWorld(vec3 rayOrigin, vec3 rayDir, float tMin, float tMax, inout HitReco
         if (hit) {
             hitAnything = true;
             closestSoFar = tempRec.t;
+            tempRec.objIndex = i;
             rec = tempRec;
         }
     }

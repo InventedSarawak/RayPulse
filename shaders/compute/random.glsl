@@ -33,3 +33,15 @@ float randomFloat() {
 float randomFloat(float min, float max) {
     return min + (max - min) * randomFloat();
 }
+
+vec3 randomPointOnUnitSphere() {
+    float u = randomFloat();
+    float v = randomFloat();
+    float theta = 2.0 * 3.14159265 * u;
+    float phi = acos(2.0 * v - 1.0);
+
+    float x = sin(phi) * cos(theta);
+    float y = sin(phi) * sin(theta);
+    float z = cos(phi);
+    return vec3(x, y, z);
+}

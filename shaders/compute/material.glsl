@@ -1,57 +1,50 @@
-// Material type constants
-#define MAT_LAMBERTIAN    0
-#define MAT_METAL         1
-#define MAT_DIELECTRIC    2
-#define MAT_EMISSIVE      3
-#define MAT_PLASTIC       4
-#define MAT_CLEARCOAT     5
+// Emission mode constants
+#define EMISSION_PHYSICAL  0
+#define EMISSION_ABSOLUTE  1
 
-// Texture slot indices (-1 = no texture)
-struct TextureIndices {
-    int albedo;        // Base color / diffuse
-    int normal;        // Normal map
-    int roughness;     // Roughness map
-    int metallic;      // Metallic map
-    int emission;      // Emission map
-};
-
-// Unified material descriptor (64 bytes, cache-friendly)
+// Unified material descriptor (96 bytes, std430 aligned)
 struct Material {
-    // Color properties (16 bytes)
-    vec3 albedo;           // Base color
+    // Block 1: Color (16 bytes)
+    vec3 albedo;
     float _pad0;
 
-    // Physical properties (16 bytes)
-    vec3 emission;         // Emitted light
-    float ior;             // Index of refraction (1.0 = air, 1.5 = glass, 2.4 = diamond)
+    // Block 2: Emission (16 bytes)
+    vec3 emission;
+    float emissionStrength;
 
-    // Surface properties (16 bytes)
-    float roughness;       // 0 = mirror, 1 = diffuse
-    float metallic;        // 0 = dielectric, 1 = metal
-    float specular;        // Specular reflection strength (0-1)
-    float transmission;    // 0 = opaque, 1 = transparent
+    // Block 3: Surface (16 bytes)
+    float roughness;
+    float metallic;
+    float transmission;
+    float ior;
 
-    // Material behavior (16 bytes)
-    int type;              // Primary material type
-    float subsurface;      // Subsurface scattering amount
-    float clearcoat;       // Clearcoat layer strength
-    float sheen;           // Fabric-like reflection
+    // Block 4: Specular (16 bytes)
+    vec3 specularTint;
+    float specular;
 
-    // Texture indices - stored as packed ints in unused space
-    // TO be implemented later
+    // Block 5: Coating (16 bytes)
+    float clearcoat;
+    float clearcoatRoughness;
+    float subsurface;
+    int emissionMode;
+
+    // Block 6: Volumetric (16 bytes)
+    vec3 absorption;
+    float sheen;
 };
 
 layout(std430, binding = 2) readonly buffer MaterialBuffer {
     Material materials[];
 };
 
+// Fresnel approximation
 float schlickFresnel(float cosine, float ior) {
     float r0 = (1.0 - ior) / (1.0 + ior);
     r0 = r0 * r0;
     return r0 + (1.0 - r0) * pow(1.0 - cosine, 5.0);
 }
 
-// Sample hemisphere with cosine-weighted distribution (Lambertian)
+// Sample hemisphere with cosine-weighted distribution
 vec3 randomCosineDirection() {
     float r1 = randomFloat();
     float r2 = randomFloat();
@@ -63,7 +56,7 @@ vec3 randomCosineDirection() {
     return vec3(sinTheta * cos(phi), sinTheta * sin(phi), z);
 }
 
-// GGX microfacet distribution (for rough surfaces)
+// GGX microfacet distribution
 vec3 sampleGGX(float roughness, vec3 N) {
     float a = roughness * roughness;
     float r1 = randomFloat();
@@ -73,10 +66,8 @@ vec3 sampleGGX(float roughness, vec3 N) {
     float cosTheta = sqrt((1.0 - r2) / (1.0 + (a * a - 1.0) * r2));
     float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
 
-    // Spherical to Cartesian
     vec3 H = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
 
-    // Transform to world space around N
     vec3 up = abs(N.z) < 0.999 ? vec3(0, 0, 1) : vec3(1, 0, 0);
     vec3 tangent = normalize(cross(up, N));
     vec3 bitangent = cross(N, tangent);
@@ -91,43 +82,14 @@ vec3 refract(vec3 uv, vec3 n, float etai_over_etat) {
     return r_out_perp + r_out_parallel;
 }
 
+// Simplified scatter function for initial implementation
 bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out vec3 scattered) {
     vec3 N = rec.normal;
 
-    // Dispatch based on material type
-    if (mat.type == MAT_LAMBERTIAN) {
-        // Diffuse scattering
-        vec3 scatterDir = N + randomCosineDirection();
+    // For now, implement basic behaviors based on material parameters
 
-        // Catch degenerate scatter direction
-        if (abs(scatterDir.x) < 1e-8 && abs(scatterDir.y) < 1e-8 && abs(scatterDir.z) < 1e-8) {
-            scatterDir = N;
-        }
-
-        scattered = normalize(scatterDir);
-        attenuation = mat.albedo;
-        return true;
-    }
-
-    else if (mat.type == MAT_METAL) {
-        // Reflection with roughness
-        vec3 reflected = reflect(rayDir, N);
-
-        if (mat.roughness > 0.01) {
-            // Sample microfacet normal based on roughness
-            vec3 microfacetN = sampleGGX(mat.roughness, N);
-            scattered = reflect(rayDir, microfacetN);
-        } else {
-            scattered = reflected;
-        }
-
-        attenuation = mat.albedo;
-        return dot(scattered, N) > 0.0; // Absorbed if scattered into surface
-    }
-
-    else if (mat.type == MAT_DIELECTRIC) {
-        attenuation = vec3(1.0);
-
+    // Pure transmission (glass-like)
+    if (mat.transmission > 0.5) {
         float refractionRatio = rec.frontFace ? (1.0 / mat.ior) : mat.ior;
         vec3 unitDir = normalize(rayDir);
 
@@ -142,61 +104,33 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
             scattered = refract(unitDir, N, refractionRatio);
         }
 
+        attenuation = mat.albedo;
         return true;
     }
 
-    else if (mat.type == MAT_EMISSIVE) {
-        if (length(mat.emission) > 10.0) {
-            return false; // Pure light source, no scattering
-        }
+    // Metallic reflection
+    if (mat.metallic > 0.5) {
+        vec3 reflected = reflect(rayDir, N);
 
-        vec3 scatterDir = N + randomCosineDirection();
-
-        if (abs(scatterDir.x) < 1e-8 && abs(scatterDir.y) < 1e-8 && abs(scatterDir.z) < 1e-8) {
-            scatterDir = N;
-        }
-
-        scattered = normalize(scatterDir);
-        attenuation = mat.albedo; // Emissive surfaces can have colored surfaces too
-        return true;
-    }
-
-    else if (mat.type == MAT_PLASTIC) {
-        // Plastic = mix of specular and diffuse
-        float fresnelTerm = schlickFresnel(abs(dot(rayDir, N)), mat.ior);
-
-        if (randomFloat() < mat.specular * fresnelTerm) {
-            // Specular reflection (like metal but weaker)
+        if (mat.roughness > 0.01) {
             vec3 microfacetN = sampleGGX(mat.roughness, N);
             scattered = reflect(rayDir, microfacetN);
-            attenuation = vec3(1.0); // White specular highlight
-            return dot(scattered, N) > 0.0;
         } else {
-            // Diffuse scattering
-            scattered = normalize(N + randomCosineDirection());
-            attenuation = mat.albedo;
-            return true;
+            scattered = reflected;
         }
+
+        attenuation = mat.albedo;
+        return dot(scattered, N) > 0.0;
     }
 
-    else if (mat.type == MAT_CLEARCOAT) {
-        // Two-layer material: glossy coat over diffuse base
-        float fresnelTerm = schlickFresnel(abs(dot(rayDir, N)), mat.ior);
+    // Diffuse (Lambertian)
+    vec3 scatterDir = N + randomCosineDirection();
 
-        if (randomFloat() < mat.clearcoat * fresnelTerm) {
-            // Scatter from clearcoat layer (glossy reflection)
-            vec3 microfacetN = sampleGGX(0.05, N); // Clearcoat is always glossy
-            scattered = reflect(rayDir, microfacetN);
-            attenuation = vec3(1.0);
-            return dot(scattered, N) > 0.0;
-        } else {
-            // Scatter from base layer (diffuse)
-            scattered = normalize(N + randomCosineDirection());
-            attenuation = mat.albedo;
-            return true;
-        }
+    if (abs(scatterDir.x) < 1e-8 && abs(scatterDir.y) < 1e-8 && abs(scatterDir.z) < 1e-8) {
+        scatterDir = N;
     }
 
-    // Fallback (shouldn't reach here)
-    return false;
+    scattered = normalize(scatterDir);
+    attenuation = mat.albedo;
+    return true;
 }

@@ -18,10 +18,66 @@ vec3 sampleSky(vec3 rayDir) {
     return mix(skyColorBottom, skyColorTop, t);
 }
 
-vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
-    vec3 throughput = vec3(1.0);  // Accumulated light attenuation
-    vec3 radiance = vec3(0.0);     // Accumulated emitted light
+vec4 sampleTintSources(vec3 surfacePos, vec3 surfaceNormal, int ignoreObjIndex) {
+    vec3 accumulatedTint = vec3(0.0);
+    float totalInfluence = 0.0;
 
+    for (int i = 0; i < objectCount; i++) {
+        if (i == ignoreObjIndex) continue;
+
+        GPUObject obj = objects[i];
+        Material mat = materials[int(obj.data2.x)];
+
+        if (mat.emissionMode == EMISSION_ABSOLUTE && mat.emissionStrength > 0.0) {
+
+            vec3 targetCenter = obj.data1.xyz;
+            float targetRadius = obj.data1.w;
+
+            vec3 randomOffset = randomPointOnUnitSphere();
+
+            vec3 targetPoint = targetCenter + (randomOffset * targetRadius);
+
+            vec3 toLight = targetPoint - surfacePos;
+            float distToCenter = length(toLight);
+            vec3 L = normalize(toLight);
+
+            // Angle of Incidence (Lambert Law)
+            float NdotL = max(dot(surfaceNormal, L), 0.0);
+
+            // If facing away, no tint
+            if (NdotL <= 0.0) continue;
+
+            float distToSurface = distToCenter - targetRadius;
+
+            if (distToSurface > 0.001) {
+                HitRecord shadowRec;
+                // Shadow Check
+                bool occluded = hitWorld(surfacePos + surfaceNormal * 0.001, L, 0.001, distToSurface - 0.01, shadowRec);
+
+                if (!occluded) {
+                    // Magical Falloff
+                    float attenuation = 1.0 / (1.0 + pow(distToSurface * 0.01f, 0.8f));
+
+                    // Calculate Influence Factor (0.0 to 1.0)
+                    // We clamp 'emissionStrength' logic so it acts as opacity.
+                    float influence = mat.emissionStrength * attenuation * NdotL;
+
+                    // Accumulate
+                    accumulatedTint += mat.emission * influence;
+                    totalInfluence += influence;
+                }
+            }
+        }
+    }
+
+    // Clamp influence to 1.0 so we don't create negative light (black holes)
+    return vec4(accumulatedTint, min(totalInfluence, 1.0));
+}
+
+
+vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
     vec3 currentOrigin = rayOrigin;
     vec3 currentDir = rayDir;
 
@@ -29,46 +85,70 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
         HitRecord rec;
 
         if (hitWorld(currentOrigin, currentDir, 0.001, INFINITY, rec)) {
-            // Fetch the material
             Material mat = materials[rec.matIndex];
 
-            // Add emission from this surface
-            // This is the KEY FIX: emissive materials contribute light at every bounce
-            radiance += throughput * mat.emission;
+            // === 1. DIRECT VISIBILITY (Looking straight at the object) ===
+            if (mat.emissionMode == EMISSION_ABSOLUTE) {
+                // If we hit the tinter directly, just show its color
+                radiance += throughput * mat.emission * mat.emissionStrength;
+                break;
+            }
+            else if (mat.emissionMode == EMISSION_PHYSICAL && mat.emissionStrength > 0.0) {
+                radiance += throughput * mat.emission * mat.emissionStrength;
+            }
 
-            // Try to scatter the ray
+            // === 2. INDIRECT TINTING (The "Radiating Rays" Effect) ===
+            // We only do this on surfaces that can receive light (diffuse/rough)
+            // If mat.transmission > 0 (Glass) or Metallic > 0.9 (Mirror),
+            // we usually skip this and let the bounce handle it.
+            if (mat.transmission < 0.5 && mat.metallic < 0.9) {
+
+                // Get Color (.rgb) and Influence (.a)
+                vec4 tintData = sampleTintSources(rec.p, rec.normal, -1);
+                vec3 tintColor = tintData.rgb;
+                float tintFactor = tintData.a;
+
+                // STEP A: Add the Tint Layer
+                // We multiply by throughput to ensure the tint sits "on top" of the current path history
+                // (e.g. a tint seen in a mirror is dimmer), but we do NOT multiply by the current
+                // surface albedo, effectively replacing it.
+                radiance += throughput * tintColor;
+
+                // STEP B: Dim the Underlying Reality
+                // If tintFactor is 1.0 (100%), we multiply throughput by 0.0.
+                // This means NO future light (sun, sky) will be added to this pixel.
+                // The surface becomes purely the tint color.
+                throughput *= (1.0 - tintFactor);
+            }
+
+            // === 3. CONTINUE SCATTERING ===
             vec3 attenuation;
             vec3 scattered;
-
             if (scatter(mat, currentDir, rec, attenuation, scattered)) {
-                // Ray scattered - update throughput and continue
                 throughput *= attenuation;
                 currentOrigin = rec.p;
                 currentDir = scattered;
 
-                // Russian Roulette path termination (optional but recommended)
-                // Randomly terminate paths that contribute little
+                // Russian Roulette... (Same as before)
                 if (bounce > 3) {
-                    float maxComponent = max(throughput.r, max(throughput.g, throughput.b));
-                    if (randomFloat() > maxComponent) {
-                        break; // Terminate this path early
+                    float p = max(throughput.r, max(throughput.g, throughput.b));
+                    // Ensure we don't divide by zero and keep a minimum probability
+                    if (randomFloat() > p) {
+                        break;
                     }
-                    // Boost remaining paths to maintain energy conservation
-                    throughput /= maxComponent;
+                    throughput /= p; // Compensate for the rays we killed
                 }
             } else {
-                // Ray absorbed (hit a pure light source or was absorbed)
                 break;
             }
         } else {
-            // Ray escaped to sky
             radiance += throughput * sampleSky(currentDir);
             break;
         }
     }
-
     return radiance;
 }
+
 
 void main()
 {

@@ -1,91 +1,97 @@
 #pragma once
 #include <glm/glm.hpp>
 
-enum MaterialType {
-    MAT_LAMBERTIAN = 0,
-    MAT_METAL = 1,
-    MAT_DIELECTRIC = 2,
-    MAT_EMISSIVE = 3,
-    MAT_PLASTIC = 4,
-    MAT_CLEARCOAT = 5
+enum EmissionMode {
+    EMISSION_PHYSICAL = 0,    // Standard additive lighting
+    EMISSION_ABSOLUTE = 1     // Multiplicative tinting/filtering
 };
 
-struct TextureIndices {
-    int albedo = -1;
-    int normal = -1;
-    int roughness = -1;
-    int metallic = -1;
-    int emission = -1;
-};
-
-// Matches GPU layout exactly (std430)
 struct GPUMaterial {
-    // Color properties (16 bytes)
-    glm::vec3 albedo;
+    glm::vec3 albedo;           // Base color
     float _pad0;
-    
-    // Physical properties (16 bytes)
-    glm::vec3 emission;
+
+    glm::vec3 emission;         // Emitted light color / tint color
+    float emissionStrength;     // Intensity multiplier
+
+    float roughness;            // 0 = mirror, 1 = matte
+    float metallic;             // 0 = dielectric, 1 = metal
+    float transmission;         // 0 = opaque, 1 = transparent
     float ior;
-    
-    // Surface properties (16 bytes)
-    float roughness;
-    float metallic;
-    float specular;
-    float transmission;
-    
-    // Material behavior (16 bytes)
-    int type;
-    float subsurface;
-    float clearcoat;
-    float sheen;
+
+    glm::vec3 specularTint;     // F0 color override
+    float specular;             // Specular strength multiplier
+
+    float clearcoat;            // Secondary glossy layer strength
+    float clearcoatRoughness;   // Coating roughness
+    float subsurface;           // Translucency amount
+    int emissionMode;           // EMISSION_PHYSICAL or EMISSION_ABSOLUTE
+
+    glm::vec3 absorption;       // Beer's Law absorption coefficients
+    float sheen;                // Fabric-like edge glow
 };
 
-// Helper builders (modern C++ factory pattern)
 class MaterialBuilder {
 public:
-    static GPUMaterial Lambertian(const glm::vec3& albedo) {
+    static GPUMaterial Default() {
         GPUMaterial m{};
-        m.type = MAT_LAMBERTIAN;
+        m.albedo = glm::vec3(0.5f);
+        m.emission = glm::vec3(0.0f);
+        m.emissionStrength = 0.0f;
+        m.roughness = 0.5f;
+        m.metallic = 0.0f;
+        m.transmission = 0.0f;
+        m.ior = 1.45f;
+        m.specularTint = glm::vec3(1.0f);
+        m.specular = 0.5f;
+        m.clearcoat = 0.0f;
+        m.clearcoatRoughness = 0.03f;
+        m.subsurface = 0.0f;
+        m.emissionMode = EMISSION_PHYSICAL;
+        m.absorption = glm::vec3(0.0f);
+        m.sheen = 0.0f;
+        return m;
+    }
+
+    static GPUMaterial Lambertian(const glm::vec3& albedo) {
+        auto m = Default();
         m.albedo = albedo;
         m.roughness = 1.0f;
         m.metallic = 0.0f;
-        m.ior = 1.45f; // Default glass-ish
+        m.transmission = 0.0f;
         return m;
     }
-    
+
     static GPUMaterial Metal(const glm::vec3& albedo, float roughness = 0.0f) {
-        GPUMaterial m{};
-        m.type = MAT_METAL;
+        auto m = Default();
         m.albedo = albedo;
         m.roughness = roughness;
         m.metallic = 1.0f;
-        m.ior = 1.0f; // Metals use complex IOR, simplified here
+        m.transmission = 0.0f;
         return m;
     }
-    
+
     static GPUMaterial Dielectric(float ior = 1.5f) {
-        GPUMaterial m{};
-        m.type = MAT_DIELECTRIC;
-        m.albedo = glm::vec3(1.0f); // Clear glass
+        auto m = Default();
+        m.albedo = glm::vec3(1.0f);
         m.roughness = 0.0f;
         m.metallic = 0.0f;
-        m.ior = ior;
         m.transmission = 1.0f;
+        m.ior = ior;
         return m;
     }
-    
+
     static GPUMaterial Emissive(const glm::vec3& color, float strength = 1.0f) {
-        GPUMaterial m{};
-        m.type = MAT_EMISSIVE;
-        m.emission = color * strength;
+        auto m = Default();
+        m.emission = color;
+        m.emissionStrength = strength;
+        m.emissionMode = EMISSION_PHYSICAL;
         m.albedo = glm::vec3(0.0f);
+        m.roughness = 1.0f;
         return m;
     }
-    
+
     static GPUMaterial Plastic(const glm::vec3& albedo, float roughness = 0.5f) {
-        GPUMaterial m{};
-        m.type = MAT_PLASTIC;
+        auto m = Default();
         m.albedo = albedo;
         m.roughness = roughness;
         m.metallic = 0.0f;
@@ -93,16 +99,35 @@ public:
         m.specular = 0.5f;
         return m;
     }
-    
-    // Layered material: glossy coating over diffuse base
+
     static GPUMaterial Clearcoat(const glm::vec3& albedo, float clearcoatAmount = 0.5f) {
-        GPUMaterial m{};
-        m.type = MAT_CLEARCOAT;
+        auto m = Default();
         m.albedo = albedo;
         m.roughness = 0.6f;
         m.metallic = 0.0f;
         m.clearcoat = clearcoatAmount;
+        m.clearcoatRoughness = 0.03f;
         m.ior = 1.5f;
+        return m;
+    }
+
+    // NEW: Color filter/tint effect
+    static GPUMaterial ColorFilter(const glm::vec3& tintColor, float strength = 0.5f) {
+        auto m = Default();
+        m.emission = tintColor;
+        m.emissionStrength = strength;
+        m.emissionMode = EMISSION_ABSOLUTE;
+        m.albedo = glm::vec3(0.0f);
+        return m;
+    }
+
+    // NEW: Dark void
+    static GPUMaterial DarkVoid(float strength = 0.9f) {
+        auto m = Default();
+        m.emission = glm::vec3(0.0f);
+        m.emissionStrength = strength;
+        m.emissionMode = EMISSION_ABSOLUTE;
+        m.albedo = glm::vec3(0.0f);
         return m;
     }
 };

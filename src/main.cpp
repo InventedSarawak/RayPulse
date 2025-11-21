@@ -13,14 +13,13 @@
 #include "renderer.h"
 #include "export.h"
 
-#define INIT_WINDOW_WIDTH 1280
-#define INIT_WINDOW_HEIGHT 720
+#define INIT_WINDOW_WIDTH 2560
+#define INIT_WINDOW_HEIGHT 1417
 
 #define DEG_TO_RAD(deg) ((deg) * 3.14159265359f / 180.0f)
 
 void calculateBasisFromEuler(const float pitch, const float yaw, const float roll,
                              glm::vec3& forward, glm::vec3& right, glm::vec3& up) {
-
     const float pitchRad = DEG_TO_RAD(pitch);
     const float yawRad = -DEG_TO_RAD(yaw);
     const float rollRad = -DEG_TO_RAD(roll);
@@ -51,14 +50,16 @@ void calculateBasisFromEuler(const float pitch, const float yaw, const float rol
 void processInput(GLFWwindow* window);
 
 // Helper to track current UI buffer size to detect window resizes
-struct UIResolution {
+struct UIResolution{
     int width;
     int height;
 };
 
 void createUIFramebuffer(int width, int height, GLuint* fbo, GLuint* tex) {
-    if (*fbo) glDeleteFramebuffers(1, fbo);
-    if (*tex) glDeleteTextures(1, tex);
+    if (*fbo)
+        glDeleteFramebuffers(1, fbo);
+    if (*tex)
+        glDeleteTextures(1, tex);
 
     glGenFramebuffers(1, fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
@@ -104,7 +105,8 @@ int main() {
     // 4. Initialize ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 460");
@@ -127,23 +129,65 @@ int main() {
     std::vector<GPUObject> objects;
     std::vector<GPUMaterial> materials;
 
+    // Ground: Neutral Grey (Perfect for seeing colored shadows and tint effects)
     const int groundMat = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.4f, 0.8f, 0.37f)));
+    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
 
-    const int leftMat = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Metal(glm::vec3(0.8f, 0.85f, 0.88f), 0.15f));
+    // Material 1: Matte Red (Test diffuse shading and color bleed)
+    const int matRed = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.8f, 0.1f, 0.1f)));
 
-    const int centerMat = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.7f, 0.3f, 0.3f)));
+    // Material 2: Matte Blue (Contrast color)
+    const int matBlue = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.1f, 0.1f, 0.8f)));
 
-    const int rightMat = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Dielectric(1.2f));
-    materials.at(rightMat).albedo = glm::vec3(0.7f, 0.7f, 0.7f);
+    // Material 3: Polished Silver (Test perfect reflection/Environment mapping)
+    const int matMirror = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Metal(glm::vec3(0.9f, 0.9f, 0.9f), 0.0f));
 
-    objects.push_back(makePlane(glm::vec3(0.0f, 1.0f, 0.0f), 0.01f, groundMat));
-    objects.push_back(makeSphere(glm::vec3(-0.6f, 0.5f, -2.0f), 0.55f, leftMat));
-    objects.push_back(makeSphere(glm::vec3(0.4f, 0.5f, -2.5f), 0.43f, centerMat));
-    objects.push_back(makeSphere(glm::vec3(0.0f, 0.5f, -1.0f), 0.5f, rightMat));
+    // Material 4: Rough Gold (Test microfacet distribution/blurry reflections)
+    const int matGold = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Metal(glm::vec3(0.8f, 0.6f, 0.2f), 0.4f));
+
+    // Material 5: Glass (Test Refraction, Fresnel effect, and transmission)
+    const int matGlass = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Dielectric(1.5f));
+
+    // Material 6: The "Ghost" Tinter (Test your custom proximity lighting)
+    // High intensity purple to stand out against the grey floor
+    // const int matTint = static_cast<int>(materials.size());
+    // materials.push_back(MaterialBuilder::ColorFilter(glm::vec3(0.8f, 0.0f, 0.8f), 2.0f));
+
+    // Material 7: Main Light (Bright Warm White)
+    const int matLight = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Emissive(glm::vec3(1.0f, 0.95f, 0.8f), 8.0f));
+
+
+    // ==========================================
+    // 2. OBJECTS
+    // ==========================================
+
+    // 1. The Floor
+    objects.push_back(makePlane(glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, groundMat));
+
+    // 2. Back Row (Diffuse colored backdrops)
+    // These provide color for the glass and metals to reflect/refract
+    objects.push_back(makeSphere(glm::vec3(-1.5f, 0.5f, -2.5f), 0.5f, matRed));
+    objects.push_back(makeSphere(glm::vec3(1.5f, 0.5f, -2.5f), 0.5f, matBlue));
+
+    // 3. Front Row (Complex Materials)
+    // Left: Rough Gold
+    objects.push_back(makeSphere(glm::vec3(-1.2f, 0.4f, -1.0f), 0.4f, matGold));
+
+    // Center: Glass (Ideally placed to refract the Red/Blue spheres behind it)
+    objects.push_back(makeSphere(glm::vec3(0.0f, 0.5f, -1.0f), 0.5f, matGlass));
+
+    // Right: Perfect Mirror
+    objects.push_back(makeSphere(glm::vec3(1.2f, 0.4f, -1.0f), 0.4f, matMirror));
+
+    // 5. The Sun
+    // High up, slightly forward to cast nice shadows on the back spheres
+    objects.push_back(makeSphere(glm::vec3(0.0f, 3.5f, -1.0f), 0.8f, matLight));
 
     sceneBuffer.update(objects);
     sceneBuffer.bind(1);
@@ -164,9 +208,12 @@ int main() {
     bool isRendering = true;
     auto cameraRot = glm::vec3{0.0f, 0.0f, 0.0f};
 
-    CameraParams camera_params = {glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, 90.0f, 0};
+    CameraParams camera_params = {
+        glm::vec3{0.1f, 0.5f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f},
+        glm::vec3{0.0f, 0.0f, 0.0f}, 60.0f, 0
+        };
     calculateBasisFromEuler(cameraRot[0], cameraRot[1], cameraRot[2],
-                           camera_params.forward, camera_params.right, camera_params.up);
+                            camera_params.forward, camera_params.right, camera_params.up);
 
     int samplesPerPixel = 4;
     int maxBounces = 8;
@@ -199,7 +246,8 @@ int main() {
             materialBuffer.bind(2);
             glBeginQuery(GL_TIME_ELAPSED, timeQuery);
             dispatchComputeShader(computeProgram, rayTexture.id, raytracer_dimensions,
-                camera_params, sky_params, objects.size(), samplesPerPixel, static_cast<uint32_t>(maxBounces));
+                                  camera_params, sky_params, objects.size(), samplesPerPixel,
+                                  static_cast<uint32_t>(maxBounces));
             glEndQuery(GL_TIME_ELAPSED);
             camera_params.frameCount += 1;
             glGetQueryObjectui64v(timeQuery, GL_QUERY_RESULT, &elapsedNanoseconds);
@@ -231,7 +279,7 @@ int main() {
             ImGui::Begin("Raypulse Controls");
 
             float gpuTimeMs = elapsedNanoseconds / 1000000.0f;
-            ImGui::TextColored(ImVec4(0,1,0,1), "Raytrace Speed: %.0f FPS", 1000.0f / (gpuTimeMs + 0.0001f));
+            ImGui::TextColored(ImVec4(0, 1, 0, 1), "Raytrace Speed: %.0f FPS", 1000.0f / (gpuTimeMs + 0.0001f));
             ImGui::Text("Render Res: %dx%d", rayTexture.width, rayTexture.height);
             ImGui::Text("Window Res: %dx%d", winWidth, winHeight);
 
@@ -245,13 +293,14 @@ int main() {
                         resizeRayTexture(rayTexture, targetRenderWidth, targetRenderHeight);
                         camera_params.frameCount = 0;
                         dispatchComputeShader(computeProgram, rayTexture.id,
-                            {targetRenderWidth, targetRenderHeight},
-                            camera_params, sky_params, objects.size(), samplesPerPixel, static_cast<uint32_t>(maxBounces));
+                                              {targetRenderWidth, targetRenderHeight},
+                                              camera_params, sky_params, objects.size(), samplesPerPixel,
+                                              static_cast<uint32_t>(maxBounces));
                     }
                 }
 
                 if (ImGui::CollapsingHeader("Anti-Aliasing", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 16)) {
+                    if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 64)) {
                         camera_params.frameCount = 0;
                     }
                     ImGui::Text("1 = No AA, 4 = Good, 8+ = Excellent");
@@ -259,7 +308,7 @@ int main() {
                         ImGui::SetTooltip("Higher values = smoother edges but slower rendering");
                     }
 
-                    if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 32)) {
+                    if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 256)) {
                         camera_params.frameCount = 0;
                     }
                 }
@@ -281,11 +330,11 @@ int main() {
                 static float prevFOV = camera_params.FOV;
 
                 bool cameraChanged = (prevCameraPos != camera_params.pos) ||
-                             (prevCameraRot != cameraRot) ||
-                             (prevFOV != camera_params.FOV);
+                    (prevCameraRot != cameraRot) ||
+                    (prevFOV != camera_params.FOV);
 
                 if (cameraChanged) {
-                    camera_params.frameCount = 0;  // Reset for new view
+                    camera_params.frameCount = 0; // Reset for new view
                     prevCameraPos = camera_params.pos;
                     prevCameraRot = cameraRot;
                     prevFOV = camera_params.FOV;
@@ -293,13 +342,13 @@ int main() {
 
                 // Check if rotation changed
                 const bool rotationChanged = (prevRot[0] != cameraRot[0]) ||
-                                      (prevRot[1] != cameraRot[1]) ||
-                                      (prevRot[2] != cameraRot[2]);
+                    (prevRot[1] != cameraRot[1]) ||
+                    (prevRot[2] != cameraRot[2]);
 
                 // Recalculate basis vectors only if rotation changed
                 if (rotationChanged) {
                     calculateBasisFromEuler(cameraRot[0], cameraRot[1], cameraRot[2],
-                                          camera_params.forward, camera_params.right, camera_params.up);
+                                            camera_params.forward, camera_params.right, camera_params.up);
                 }
 
                 ImGui::SliderFloat("FOV", &camera_params.FOV, 20.0f, 150.0f, "%.1f°");
