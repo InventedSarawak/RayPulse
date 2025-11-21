@@ -1,4 +1,9 @@
 .idea
+.vscode/
 buildDir
 all.txt
 imgui.ini
+# Build directory
+build/
+*.o
+*.d

@@ -1,4 +1,4 @@
-#version 460 core
+#version 430 core
 #extension GL_GOOGLE_include_directive: require
 
 #include "camera.glsl"
@@ -10,8 +10,8 @@ layout (local_size_x = 16, local_size_y = 16) in;
 layout (rgba32f, binding = 0) uniform image2D outputImage;
 
 // Sky Rendering Parameters
-uniform vec3 skyColorTop;
-uniform vec3 skyColorBottom;
+layout(location = 10) uniform vec3 skyColorTop;
+layout(location = 11) uniform vec3 skyColorBottom;
 
 vec3 sampleSky(vec3 rayDir) {
     float t = 0.5 * (rayDir.y + 1.0);

@@ -3,20 +3,18 @@ project(
     ['c', 'cpp'],
     meson_version : '>= 1.3.0',
     version : '0.1',
-    default_options : [
-        'warning_level=3'
-    ],
+    default_options : ['warning_level=3'],
 )
 
 c_compiler = meson.get_compiler('c')
+cpp_compiler = meson.get_compiler('cpp')
 
 if c_compiler.get_id() == 'clang-cl'
     add_project_arguments('-Wno-c23-extensions', language : 'c')
 endif
 
-lib_include_dir = include_directories('../libraries/include')
 prj_include_dir = include_directories('include')
-
+glad_include_dir = include_directories('external/glad/include')
 imgui_src_dir = 'src/imgui'
 imgui_include_dir = include_directories(imgui_src_dir)
 
@@ -29,142 +27,51 @@ imgui_sources = [
     join_paths(imgui_src_dir, 'backends/imgui_impl_opengl3.cpp'),
 ]
 
-glad_src = '../libraries/src/glad.c'
-glfw_lib = '../libraries/lib/glfw3.lib'
-glm_lib = '../libraries/lib/glm.lib'
-
-glm_include_dir = include_directories('../libraries/include/glm')
-imath_include_dir = include_directories('../libraries/include/Imath')
-
-lib_dir = meson.current_source_dir() / '../libraries/lib'
+glad_src = 'external/glad/src/gl.c'
 
 glad_dep = declare_dependency(
     sources : files(glad_src),
-    include_directories : lib_include_dir
+    include_directories : glad_include_dir
 )
 
-glfw_dep = declare_dependency(
-    dependencies : [meson.get_compiler('c').find_library('glfw3_mt', dirs : lib_dir)],
-    include_directories : lib_include_dir
-)
+glfw_dep = dependency('glfw3', required: true)
+opengl_dep = dependency('opengl', required: true)
 
-glm_dep = declare_dependency(
-    dependencies : [meson.get_compiler('cpp').find_library('glm', dirs : lib_dir)],
-    include_directories : glm_include_dir
-)
+openexr_dep = dependency('OpenEXR', required: false)
+if not openexr_dep.found()
+    openexr_libs = ['IlmImf-2_5', 'Imath-2_5', 'Half-2_5', 'Iex-2_5', 'IexMath-2_5', 'IlmThread-2_5']
+    openexr_dep_list = []
+    foreach lib_name : openexr_libs
+        openexr_dep_list += cpp_compiler.find_library(lib_name, required: true)
+    endforeach
+    openexr_dep = declare_dependency(dependencies : openexr_dep_list)
+endif
 
-openexr_libs = [
-    'OpenEXR-3_4',
-    'OpenEXRCore-3_4',
-    'OpenEXRUtil-3_4',
-    'Iex-3_4',
-    'IlmThread-3_4',
-    'Imath-3_2', # Core math library
-    'openjph.0.24', # JPEG 2000 compression
-]
+# Compute shader compilation
+glslc = find_program('glslangValidator', required : false)
 
-openexr_dep_list = []
-foreach lib_name : openexr_libs
-    openexr_dep_list += meson.get_compiler('cpp').find_library(lib_name, dirs : lib_dir)
-endforeach
+if glslc.found()
+    compute_shader_spv = custom_target('compile_compute_shader',
+        input : 'shaders/compute/main.glsl',
+        output : 'main.spv',
+        command : [glslc, '-G', '-S', 'comp', '-Ishaders/compute', '@INPUT@', '-o', '@OUTPUT@'],
+        build_always_stale : true,
+        install : true,
+        install_dir : get_option('bindir')
+    )
+    shader_deps = [compute_shader_spv]
+else
+    warning('glslangValidator not found, compute shader will not be compiled')
+    shader_deps = []
+endif
 
-openexr_dep = declare_dependency(
-    dependencies : openexr_dep_list,
-    include_directories : lib_include_dir
-)
-
-# Define the list of DLLs base names
-openexr_dlls = [
-    'OpenEXR-3_4.dll',
-    'OpenEXRCore-3_4.dll',
-    'Iex-3_4.dll',
-    'IlmThread-3_4.dll',
-    'Imath-3_2.dll',
-    'openjph.0.24.dll',
-]
-
-# --- DLL COPY SETUP ---
-
-# 1. Source files for install_data (DLLs are physically located in ../libraries/lib/)
-full_dll_paths = []
-foreach dll_name : openexr_dlls
-    full_dll_paths += '..//libraries/lib/' + dll_name
-endforeach
-
-# 2. Add glfw3.dll to the list of DLLs that need copying
-all_runtime_dlls = openexr_dlls + ['glfw3.dll']
-
-# 3. Define the directory paths for the custom target
-powershell_cmd = find_program('powershell')
-# Source: points to the 'lib' folder where all DLLs are now located
-dll_source_dir = '../../libraries/lib/*'
-# Destination: the build root (where the executable is)
-dll_target_dir = './'
-
-
-# Install the DLLs during the install step
-install_data(
-    sources : files(full_dll_paths),
-    install_dir : get_option('bindir'),
-    install_mode : 'rwxr-xr-x'
-)
-
-
-# For running *during* development (the actual runtime fix)
-copy_runtime_dlls = custom_target('copy_runtime_dlls',
-                                  # Input list is used for dependency tracking
-                                  input : files(full_dll_paths, '../libraries/lib/glfw3.dll'),
-
-                                  # Output is the list of ALL base DLL names
-                                  output : all_runtime_dlls,
-                                  build_always_stale : true,
-
-                                  # FIX: Use Copy-Item with explicit path variables
-                                  command : [powershell_cmd,
-                                             '-Command',
-                                             'Copy-Item',
-                                             '-Path', dll_source_dir,
-                                             '-Destination', dll_target_dir,
-                                             '-Include', '*.dll',
-                                             '-Recurse',
-                                             '-Force'
-                                  ]
-)
-
-glslc = find_program('glslc', required : true)
-
-compute_shader_spv = custom_target('compile_compute_shader',
-                                   input : 'shaders/compute/main.glsl',
-                                   output : 'main.spv',
-                                   command : [
-                                       glslc,
-                                       '-fshader-stage=compute',
-                                       '--target-env=opengl',
-                                       '-fauto-map-locations', # Fixes the layout(location) errors
-                                       '-g',
-                                       '@INPUT@',
-                                       '-o', '@OUTPUT@'
-                                   ],
-                                   build_always_stale : true,
-                                   install : true,
-                                   install_dir : get_option('bindir') # Install next to the executable
-)
-
-dependencies = [
-    glad_dep,
-    glfw_dep,
-    glm_dep,
-    openexr_dep,
-    dependency('opengl')
-]
-
+dependencies = [glad_dep, glfw_dep, opengl_dep, openexr_dep]
 
 executable(
-    'main',
-    ['src/main.cpp', 'src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp']
-    + imgui_sources,
+    'raypulse',
+    ['src/main.cpp', 'src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp'] + imgui_sources,
     dependencies : dependencies,
-    include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir, imgui_include_dir],
-    link_depends : [compute_shader_spv, copy_runtime_dlls],
+    include_directories : [prj_include_dir, glad_include_dir, imgui_include_dir],
+    link_depends : shader_deps,
     install : true
 )

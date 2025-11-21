@@ -77,13 +77,15 @@ int main() {
     // 1. Initialize GLFW
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     GLFWwindow* window = glfwCreateWindow(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT,
                                           "Raypulse", nullptr, nullptr);
     if (window == nullptr) {
-        printf("Failed to create GLFW window\n");
+        const char* description;
+        glfwGetError(&description);
+        printf("Failed to create GLFW window: %s\n", description);
         glfwTerminate();
         return -1;
     }
@@ -93,7 +95,12 @@ int main() {
 
     // 2. Initialize GLAD
     const int version = gladLoadGL(glfwGetProcAddress);
-    if (version == 0) return -1;
+    if (version == 0) {
+        printf("Failed to initialize GLAD\n");
+        glfwTerminate();
+        return -1;
+    }
+    printf("OpenGL version loaded: %d.%d\n", GLAD_VERSION_MAJOR(version), GLAD_VERSION_MINOR(version));
 
     // 3. Get Monitor Refresh Rate
     GLFWmonitor* primaryMonitor = glfwGetPrimaryMonitor();
@@ -107,11 +114,11 @@ int main() {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 460");
+    ImGui_ImplOpenGL3_Init("#version 410");
 
     // 5. Create Resources
     GLuint renderProgram = createShaderProgramFromFiles("shaders/vertex.glsl", "shaders/fragment.glsl");
-    GLuint computeProgram = createComputeProgramFromBinary("./buildDir/main.spv");
+    GLuint computeProgram = createComputeProgramFromBinary("build/main.spv");
 
     // Initial Raytracer Resolution
     RayTexture rayTexture = createRayTexture(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT);
