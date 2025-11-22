@@ -13,8 +13,8 @@
 #include "renderer.h"
 #include "export.h"
 
-#define INIT_WINDOW_WIDTH 2560
-#define INIT_WINDOW_HEIGHT 1417
+#define INIT_WINDOW_WIDTH 1600
+#define INIT_WINDOW_HEIGHT 900
 
 #define DEG_TO_RAD(deg) ((deg) * 3.14159265359f / 180.0f)
 
@@ -129,64 +129,36 @@ int main() {
     std::vector<GPUObject> objects;
     std::vector<GPUMaterial> materials;
 
-    // Ground: Neutral Grey (Perfect for seeing colored shadows and tint effects)
-    const int groundMat = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.5f, 0.5f, 0.5f)));
+    const int matGround = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.2f, 0.2f, 0.2f)));
 
-    // Material 1: Matte Red (Test diffuse shading and color bleed)
-    const int matRed = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.8f, 0.1f, 0.1f)));
+    const int matVelvet = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Velvet(glm::vec3(0.8f, 0.1f, 0.1f), 1.5f));
 
-    // Material 2: Matte Blue (Contrast color)
-    const int matBlue = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.1f, 0.1f, 0.8f)));
+    // 2. BLUE SATIN (moderate sheen + specular)
+    const int matSatin = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Satin(glm::vec3(0.1f, 0.3f, 0.8f)));
 
-    // Material 3: Polished Silver (Test perfect reflection/Environment mapping)
-    const int matMirror = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Metal(glm::vec3(0.9f, 0.9f, 0.9f), 0.0f));
+    // 3. GREEN FELT (medium sheen)
+    const int matFelt = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Velvet(glm::vec3(0.1f, 0.6f, 0.1f), 0.8f));
 
-    // Material 4: Rough Gold (Test microfacet distribution/blurry reflections)
-    const int matGold = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Metal(glm::vec3(0.8f, 0.6f, 0.2f), 0.4f));
+    // 4. Reference matte (no sheen)
+    const int matMatte = static_cast<int>(materials.size());
+    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.8f, 0.8f, 0.1f)));
 
-    // Material 5: Glass (Test Refraction, Fresnel effect, and transmission)
-    const int matGlass = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Dielectric(1.5f));
-
-    // Material 6: The "Ghost" Tinter (Test your custom proximity lighting)
-    // High intensity purple to stand out against the grey floor
-    // const int matTint = static_cast<int>(materials.size());
-    // materials.push_back(MaterialBuilder::ColorFilter(glm::vec3(0.8f, 0.0f, 0.8f), 2.0f));
-
-    // Material 7: Main Light (Bright Warm White)
     const int matLight = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Emissive(glm::vec3(1.0f, 0.95f, 0.8f), 8.0f));
+    materials.push_back(MaterialBuilder::Emissive(glm::vec3(1.0f), 1.5f));
+
+    objects.push_back(makePlane(glm::vec3(0.0f, 1.0f, 0.0f), 0.5f, matGround));
 
 
-    // ==========================================
-    // 2. OBJECTS
-    // ==========================================
+    objects.push_back(makeSphere(glm::vec3(-2.0f, 0.5f, -2.5f), 0.5f, matVelvet));
+    objects.push_back(makeSphere(glm::vec3(-0.7f, 0.5f, -2.5f), 0.5f, matSatin));
+    objects.push_back(makeSphere(glm::vec3(0.7f, 0.5f, -2.5f), 0.5f, matFelt));
+    objects.push_back(makeSphere(glm::vec3(2.0f, 0.5f, -2.5f), 0.5f, matMatte));
 
-    // 1. The Floor
-    objects.push_back(makePlane(glm::vec3(0.0f, 1.0f, 0.0f), 0.0f, groundMat));
-
-    // 2. Back Row (Diffuse colored backdrops)
-    // These provide color for the glass and metals to reflect/refract
-    objects.push_back(makeSphere(glm::vec3(-1.5f, 0.5f, -2.5f), 0.5f, matRed));
-    objects.push_back(makeSphere(glm::vec3(1.5f, 0.5f, -2.5f), 0.5f, matBlue));
-
-    // 3. Front Row (Complex Materials)
-    // Left: Rough Gold
-    objects.push_back(makeSphere(glm::vec3(-1.2f, 0.4f, -1.0f), 0.4f, matGold));
-
-    // Center: Glass (Ideally placed to refract the Red/Blue spheres behind it)
-    objects.push_back(makeSphere(glm::vec3(0.0f, 0.5f, -1.0f), 0.5f, matGlass));
-
-    // Right: Perfect Mirror
-    objects.push_back(makeSphere(glm::vec3(1.2f, 0.4f, -1.0f), 0.4f, matMirror));
-
-    // 5. The Sun
-    // High up, slightly forward to cast nice shadows on the back spheres
+    // Keep your light source
     objects.push_back(makeSphere(glm::vec3(0.0f, 3.5f, -1.0f), 0.8f, matLight));
 
     sceneBuffer.update(objects);
@@ -300,7 +272,7 @@ int main() {
                 }
 
                 if (ImGui::CollapsingHeader("Anti-Aliasing", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 64)) {
+                    if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 256)) {
                         camera_params.frameCount = 0;
                     }
                     ImGui::Text("1 = No AA, 4 = Good, 8+ = Excellent");

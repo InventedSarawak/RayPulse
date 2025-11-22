@@ -87,9 +87,24 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
         if (hitWorld(currentOrigin, currentDir, 0.001, INFINITY, rec)) {
             Material mat = materials[rec.matIndex];
 
-            // === 1. DIRECT VISIBILITY (Looking straight at the object) ===
+            // ===========================================================
+            // BEER'S LAW (Volumetric Absorption)
+            // ===========================================================
+            // If we hit a BACK face (!frontFace), and the material is transmissive,
+            // it means the ray just traveled 'rec.t' distance THROUGH the medium.
+            if (!rec.frontFace && mat.transmission > 0.5) {
+                vec3 absorption = mat.absorption;
+                float distanceTraveled = rec.t;
+
+                // I = I₀ * exp(-absorption * distance)
+                vec3 transmittance = exp(-absorption * distanceTraveled);
+                throughput *= transmittance;
+            }
+            // ===========================================================
+
+
+            // 1. DIRECT VISIBILITY (Emission)
             if (mat.emissionMode == EMISSION_ABSOLUTE) {
-                // If we hit the tinter directly, just show its color
                 radiance += throughput * mat.emission * mat.emissionStrength;
                 break;
             }
@@ -97,46 +112,31 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
                 radiance += throughput * mat.emission * mat.emissionStrength;
             }
 
-            // === 2. INDIRECT TINTING (The "Radiating Rays" Effect) ===
-            // We only do this on surfaces that can receive light (diffuse/rough)
-            // If mat.transmission > 0 (Glass) or Metallic > 0.9 (Mirror),
-            // we usually skip this and let the bounce handle it.
+            // 2. INDIRECT TINTING (Color filters)
             if (mat.transmission < 0.5 && mat.metallic < 0.9) {
-
-                // Get Color (.rgb) and Influence (.a)
                 vec4 tintData = sampleTintSources(rec.p, rec.normal, -1);
                 vec3 tintColor = tintData.rgb;
                 float tintFactor = tintData.a;
-
-                // STEP A: Add the Tint Layer
-                // We multiply by throughput to ensure the tint sits "on top" of the current path history
-                // (e.g. a tint seen in a mirror is dimmer), but we do NOT multiply by the current
-                // surface albedo, effectively replacing it.
                 radiance += throughput * tintColor;
-
-                // STEP B: Dim the Underlying Reality
-                // If tintFactor is 1.0 (100%), we multiply throughput by 0.0.
-                // This means NO future light (sun, sky) will be added to this pixel.
-                // The surface becomes purely the tint color.
                 throughput *= (1.0 - tintFactor);
             }
 
-            // === 3. CONTINUE SCATTERING ===
+            // 3. SCATTERING
             vec3 attenuation;
             vec3 scattered;
             if (scatter(mat, currentDir, rec, attenuation, scattered)) {
+                // IMPORTANT: When using Beer's law, the 'attenuation' from scatter
+                // for glass should ideally be white (1.0), otherwise you double-tint.
+                // (See the C++ fix below)
                 throughput *= attenuation;
                 currentOrigin = rec.p;
                 currentDir = scattered;
 
-                // Russian Roulette... (Same as before)
+                // Russian Roulette
                 if (bounce > 3) {
                     float p = max(throughput.r, max(throughput.g, throughput.b));
-                    // Ensure we don't divide by zero and keep a minimum probability
-                    if (randomFloat() > p) {
-                        break;
-                    }
-                    throughput /= p; // Compensate for the rays we killed
+                    if (randomFloat() > p) break;
+                    throughput /= p;
                 }
             } else {
                 break;
@@ -148,7 +148,6 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
     }
     return radiance;
 }
-
 
 void main()
 {

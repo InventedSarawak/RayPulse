@@ -13,3 +13,8 @@
 
 - **ESC** - Exit application
 - **S** - Save current frame to EXR (timestamped filename)
+
+### References
+
+Raytracing in one weekend - CPU Implementation reference
+What're uber shaders? - Material architecture reference
