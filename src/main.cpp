@@ -115,8 +115,11 @@ int main() {
     GLuint renderProgram = createShaderProgramFromFiles("shaders/vertex.glsl", "shaders/fragment.glsl");
     GLuint computeProgram = createComputeProgramFromBinary("./buildDir/main.spv");
 
-    // Initial Raytracer Resolution
-    RayTexture rayTexture = createRayTexture(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT);
+    // 6. Accumulation Buffer: Stores the raw sum of all samples (Must be 32F for precision)
+    RayTexture accumTexture = createTexture(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT, GL_RGBA32F);
+
+    // 7. Output Buffer: Stores the averaged result for display
+    RayTexture outputTexture = createTexture(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT, GL_RGBA32F);
 
     // Input variables for the GUI (initialized to start resolution)
     int targetRenderWidth = INIT_WINDOW_WIDTH;
@@ -178,6 +181,9 @@ int main() {
 
     // Scene Params
     bool isRendering = true;
+    int samplesPerFrame = 8; // Low number = fast UI, slow image
+    int maxSamples = 5000; // Stop after this many samples
+    bool accumulationPaused = false;
     auto cameraRot = glm::vec3{0.0f, 0.0f, 0.0f};
 
     CameraParams camera_params = {
@@ -204,21 +210,22 @@ int main() {
         int winWidth, winHeight;
         glfwGetFramebufferSize(window, &winWidth, &winHeight);
 
-        // Prepare Raytracer dimensions (for Compute Shader)
-        RaytracerDimensions raytracer_dimensions = {rayTexture.width, rayTexture.height};
-
         if (winWidth != currentUIRes.width || winHeight != currentUIRes.height) {
             currentUIRes.width = winWidth;
             currentUIRes.height = winHeight;
             createUIFramebuffer(winWidth, winHeight, &uiFBO, &uiTexture);
         }
 
-        if (isRendering) {
+        int currentTotalSamples = camera_params.frameCount * samplesPerFrame;
+        bool isRenderingComplete = currentTotalSamples >= maxSamples;
+
+        if (isRendering && !accumulationPaused && !isRenderingComplete) {
             sceneBuffer.bind(1);
             materialBuffer.bind(2);
             glBeginQuery(GL_TIME_ELAPSED, timeQuery);
-            dispatchComputeShader(computeProgram, rayTexture.id, raytracer_dimensions,
-                                  camera_params, sky_params, objects.size(), samplesPerPixel,
+            dispatchComputeShader(computeProgram, accumTexture.id, outputTexture.id,
+                                  {accumTexture.width, accumTexture.height}, camera_params, sky_params,
+                                  objects.size(), samplesPerFrame, maxSamples,
                                   static_cast<uint32_t>(maxBounces));
             glEndQuery(GL_TIME_ELAPSED);
             camera_params.frameCount += 1;
@@ -231,7 +238,7 @@ int main() {
         glDisable(GL_BLEND);
         glUseProgram(renderProgram);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, rayTexture.id);
+        glBindTexture(GL_TEXTURE_2D, outputTexture.id);
         quadRenderer.render();
 
         // 2. Render UI
@@ -252,9 +259,36 @@ int main() {
 
             float gpuTimeMs = elapsedNanoseconds / 1000000.0f;
             ImGui::TextColored(ImVec4(0, 1, 0, 1), "Raytrace Speed: %.0f FPS", 1000.0f / (gpuTimeMs + 0.0001f));
-            ImGui::Text("Render Res: %dx%d", rayTexture.width, rayTexture.height);
+            ImGui::Text("Render Res: %dx%d", accumTexture.width, accumTexture.height);
             ImGui::Text("Window Res: %dx%d", winWidth, winHeight);
 
+            if (isRenderingComplete) {
+                // Green "Complete" text
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                ImGui::Text("RENDERING COMPLETE (%d Samples)", maxSamples);
+                ImGui::PopStyleColor();
+
+                // Show a full progress bar
+                ImGui::ProgressBar(1.0f, ImVec2(-1.0f, 0.0f), "Done");
+            }
+            else if (accumulationPaused) {
+                // Yellow "Paused" text
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                ImGui::Text("PAUSED (%d / %d)", currentTotalSamples, maxSamples);
+                ImGui::PopStyleColor();
+
+                float progress = (float)currentTotalSamples / (float)maxSamples;
+                char overlay[32];
+                sprintf(overlay, "Paused");
+                ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), overlay);
+            }
+            else {
+                // Standard Progress Display
+                float progress = (float)currentTotalSamples / (float)maxSamples;
+                char overlay[32];
+                sprintf(overlay, "%d / %d Samples", currentTotalSamples, maxSamples);
+                ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), overlay);
+            }
             ImGui::Separator();
             if (ImGui::CollapsingHeader("Resolution Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::InputInt("Width", &targetRenderWidth);
@@ -262,26 +296,49 @@ int main() {
 
                 if (ImGui::Button("Set Resolution")) {
                     if (targetRenderWidth > 0 && targetRenderHeight > 0) {
-                        resizeRayTexture(rayTexture, targetRenderWidth, targetRenderHeight);
+                        resizeTexture(accumTexture, targetRenderWidth, targetRenderHeight, GL_RGBA32F);
+                        resizeTexture(outputTexture, targetRenderWidth, targetRenderHeight, GL_RGBA32F);
+                        float clearColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        glClearTexImage(accumTexture.id, 0, GL_RGBA, GL_FLOAT, clearColor);
                         camera_params.frameCount = 0;
-                        dispatchComputeShader(computeProgram, rayTexture.id,
-                                              {targetRenderWidth, targetRenderHeight},
-                                              camera_params, sky_params, objects.size(), samplesPerPixel,
-                                              static_cast<uint32_t>(maxBounces));
+                        createUIFramebuffer(winWidth, winHeight, &uiFBO, &uiTexture);
                     }
                 }
 
-                if (ImGui::CollapsingHeader("Anti-Aliasing", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    if (ImGui::SliderInt("Samples Per Pixel", &samplesPerPixel, 1, 256)) {
-                        camera_params.frameCount = 0;
-                    }
-                    ImGui::Text("1 = No AA, 4 = Good, 8+ = Excellent");
+                if (ImGui::CollapsingHeader("Progressive Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::SliderInt("Max Samples (Target)", &maxSamples, 10, 100000);
                     if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Higher values = smoother edges but slower rendering");
+                        ImGui::SetTooltip("Rendering stops when this sample count is reached.");
+                    }
+
+                    ImGui::SliderInt("Samples / Frame (Speed)", &samplesPerFrame, 1, 16);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(
+                            "Higher = Faster convergence, but lower FPS/Laggy UI.\nLower = Smooth UI, slow convergence.");
                     }
 
                     if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 256)) {
+                        // Changing light physics invalidates the old history
+                        float clearColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        glClearTexImage(accumTexture.id, 0, GL_RGBA, GL_FLOAT, clearColor);
                         camera_params.frameCount = 0;
+                    }
+
+                    ImGui::Separator();
+
+                    // --- 3. ACTIONS ---
+
+                    if (ImGui::Button("Restart")) {
+                        float clearColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        glClearTexImage(accumTexture.id, 0, GL_RGBA, GL_FLOAT, clearColor);
+                        camera_params.frameCount = 0;
+                    }
+
+                    ImGui::SameLine();
+
+                    // Pause/Resume (useful to look closely at a noisy image without it refining)
+                    if (ImGui::Button(accumulationPaused ? "Resume" : "Pause")) {
+                        accumulationPaused = !accumulationPaused;
                     }
                 }
             }
@@ -306,6 +363,8 @@ int main() {
                     (prevFOV != camera_params.FOV);
 
                 if (cameraChanged) {
+                    float clearColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                    glClearTexImage(accumTexture.id, 0, GL_RGBA, GL_FLOAT, clearColor);
                     camera_params.frameCount = 0; // Reset for new view
                     prevCameraPos = camera_params.pos;
                     prevCameraRot = cameraRot;
@@ -334,13 +393,9 @@ int main() {
 
 
             ImGui::Separator();
-            ImGui::Checkbox("Real-time Rendering", &isRendering);
             if (ImGui::Button("Save .exr")) {
                 const char* filename = generateTimestampedFilename("raypulse", ".exr");
-                saveToEXR(rayTexture.id, rayTexture.width, rayTexture.height, filename);
-            }
-            if (ImGui::Button("Reset Accumulation")) {
-                camera_params.frameCount = 0;
+                saveToEXR(outputTexture.id, outputTexture.width, outputTexture.height, filename);
             }
             ImGui::End();
 
@@ -371,7 +426,8 @@ int main() {
 
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
-    destroyRayTexture(rayTexture);
+    destroyTexture(accumTexture);
+    destroyTexture(outputTexture);
     glDeleteProgram(renderProgram);
     glDeleteProgram(computeProgram);
     glDeleteQueries(1, &timeQuery);

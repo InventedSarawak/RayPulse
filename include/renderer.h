@@ -99,5 +99,5 @@ typedef struct{
     glm::vec3 colorBottom;
 } SkyParams;
 
-void dispatchComputeShader(GLuint program, GLuint texture, RaytracerDimensions raytracer_dimensions,
-    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel, uint32_t maxBounces);
+void dispatchComputeShader(GLuint program, GLuint accumTexture, GLuint outputTexture, RaytracerDimensions raytracer_dimensions,
+    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerFrame, int maxTotalSamples, uint32_t maxBounces);

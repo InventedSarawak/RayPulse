@@ -169,10 +169,10 @@ executable(
     install : true
 )
 
-executable(
-    'test1',
-    ['test.cpp', 'src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp'],
-    dependencies : dependencies,
-    include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir, imgui_include_dir],
-    install : true
-)
+#executable(
+#    'test1',
+#    ['test.cpp', 'src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp'],
+#    dependencies : dependencies,
+#    include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir, imgui_include_dir],
+#    install : true
+#)

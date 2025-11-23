@@ -87,12 +87,14 @@ void MaterialBuffer::bind(GLuint bindingPoint) const {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, ssbo);
 }
 
-void dispatchComputeShader(const GLuint program, const GLuint texture, const RaytracerDimensions raytracer_dimensions,
-    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerPixel, uint32_t maxBounces) {
+void dispatchComputeShader(const GLuint program, const GLuint accumTexture, const GLuint outputTexture,
+    const RaytracerDimensions raytracer_dimensions, CameraParams camera_params, SkyParams sky_params,
+    const size_t objectCount, const int samplesPerFrame, const int maxTotalSamples, const uint32_t maxBounces) {
     glUseProgram(program);
-    
-    // Bind texture as image for writing
-    glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+
+    glBindImageTexture(0, outputTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+
+    glBindImageTexture(1, accumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
     
     // Set uniforms
     glUniform2f(glGetUniformLocation(program, "resolution"), 
@@ -109,7 +111,10 @@ void dispatchComputeShader(const GLuint program, const GLuint texture, const Ray
 
     glUniform1i(glGetUniformLocation(program, "objectCount"), static_cast<GLint>(objectCount));
     glUniform1ui(glGetUniformLocation(program, "frameCount"), camera_params.frameCount);
-    glUniform1i(glGetUniformLocation(program, "samplesPerPixel"), samplesPerPixel);
+
+    glUniform1i(glGetUniformLocation(program, "samplesPerFrame"), samplesPerFrame);
+    glUniform1i(glGetUniformLocation(program, "maxTotalSamples"), maxTotalSamples);
+
     glUniform1ui(glGetUniformLocation(program, "maxBounces"), maxBounces);
 
     // Dispatch compute shader

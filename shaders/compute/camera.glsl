@@ -9,5 +9,6 @@ uniform vec3 cameraUp;
 uniform float cameraFOV;
 
 uniform uint frameCount;
-uniform int samplesPerPixel;
+uniform int samplesPerFrame;
+uniform int maxTotalSamples;
 uniform uint maxBounces;

@@ -7,6 +7,6 @@ struct RayTexture {
     int height;
 };
 
-RayTexture createRayTexture(int width, int height);
-void resizeRayTexture(RayTexture& texture, int newWidth, int newHeight);
-void destroyRayTexture(RayTexture& texture);
+RayTexture createTexture(int width, int height, GLenum internalFormat);
+void resizeTexture(RayTexture& texture, int newWidth, int newHeight, GLenum internalFormat);
+void destroyTexture(RayTexture& texture);

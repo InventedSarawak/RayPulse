@@ -49,7 +49,7 @@ layout(std430, binding = 2) readonly buffer MaterialBuffer {
 float schlickFresnel(float cosine, float ior) {
     float r0 = (1.0 - ior) / (1.0 + ior);
     r0 = r0 * r0;
-    return r0 + (1.0 - r0) * pow(1.0 - cosine, 5.0);
+    return r0 + (1.0 - r0) * pow(max(0.0, 1.0 - cosine), 5.0);
 }
 
 // Sample hemisphere with cosine-weighted distribution
@@ -85,7 +85,7 @@ vec3 calculateF0(vec3 albedo, float metallic, vec3 specularTint, float specular)
 }
 
 vec3 schlickFresnelVec(float cosine, vec3 f0) {
-    return f0 + (vec3(1.0) - f0) * pow(1.0 - cosine, 5.0);
+    return f0 + (vec3(1.0) - f0) * pow(max(0.0, 1.0 - cosine), 5.0);
 }
 
 // Sample a microfacet normal weighted by GGX distribution
@@ -95,7 +95,8 @@ vec3 sampleGGXMicrofacet(float roughness, vec3 N) {
     float r2 = randomFloat();
 
     float phi = 2.0 * 3.14159265359 * r1;
-    float cosTheta = sqrt((1.0 - r2) / (1.0 + (a * a - 1.0) * r2));
+    float denom = 1.0 + (a * a - 1.0) * r2;
+    float cosTheta = sqrt((1.0 - r2) / max(denom, 0.00001));
     float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
 
     // Tangent space vector
@@ -166,7 +167,7 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
         vec3 unitDir = normalize(rayDir);
 
         float cosTheta = min(dot(-unitDir, N), 1.0);
-        float sin_theta = sqrt(1.0 - cosTheta * cosTheta);
+        float sin_theta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
 
         bool cannotRefract = (refractionRatio * sin_theta) > 1.0;
         float reflectProb = schlickFresnel(cosTheta, refractionRatio);

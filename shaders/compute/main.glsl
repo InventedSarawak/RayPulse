@@ -8,10 +8,18 @@
 
 layout (local_size_x = 16, local_size_y = 16) in;
 layout (rgba32f, binding = 0) uniform image2D outputImage;
+layout (rgba32f, binding = 1) uniform image2D accumImage;
 
 // Sky Rendering Parameters
 uniform vec3 skyColorTop;
 uniform vec3 skyColorBottom;
+
+bool isSafe(vec3 v) {
+    // Check if any component is NaN or Infinite
+    if (isnan(v.x) || isnan(v.y) || isnan(v.z)) return false;
+    if (isinf(v.x) || isinf(v.y) || isinf(v.z)) return false;
+    return true;
+}
 
 vec3 sampleSky(vec3 rayDir) {
     float t = 0.5 * (rayDir.y + 1.0);
@@ -125,9 +133,6 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
             vec3 attenuation;
             vec3 scattered;
             if (scatter(mat, currentDir, rec, attenuation, scattered)) {
-                // IMPORTANT: When using Beer's law, the 'attenuation' from scatter
-                // for glass should ideally be white (1.0), otherwise you double-tint.
-                // (See the C++ fix below)
                 throughput *= attenuation;
                 currentOrigin = rec.p;
                 currentDir = scattered;
@@ -159,11 +164,16 @@ void main()
         return;
     }
 
+    vec4 previousData = imageLoad(accumImage, pixelCoords);
+    float currentSampleCount = previousData.a; // Sample count stored in alpha channel
+
+    if (currentSampleCount >= float(maxTotalSamples)) return;
+
     initRNG(uvec2(pixelCoords), frameCount);
 
-    vec3 colorAccumulator = vec3(0.0);
+    vec3 newColorSum = vec3(0.0);
 
-    for (int numSample = 0; numSample < samplesPerPixel; numSample ++) {
+    for (int numSample = 0; numSample < samplesPerFrame; numSample ++) {
         // Add random jitter within the pixel [0, 1)
         vec2 jitter = vec2(randomFloat(), randomFloat());
 
@@ -184,11 +194,23 @@ void main()
         (ndc.x * planeScale * cameraRight) +
         (ndc.y * planeScale * cameraUp));
 
-        colorAccumulator += traceRay(rayOrigin, rayDir);
+        newColorSum += traceRay(rayOrigin, rayDir);
     }
 
-    // finalColor = pow(finalColor, vec3(1.0 / 2.2));
-    vec3 finalColor = colorAccumulator / float(samplesPerPixel);
+    if (isSafe(newColorSum)) {
+        vec3 totalSum = previousData.rgb + newColorSum;
+        float totalSamples = currentSampleCount + float(samplesPerFrame);
+        imageStore(accumImage, pixelCoords, vec4(totalSum, totalSamples));
+
+        // Update display buffer
+        vec3 finalColor = totalSum / totalSamples;
+        imageStore(outputImage, pixelCoords, vec4(finalColor, 1.0));
+    }
+    else {
+        // If we got a NaN, just write back the OLD data without changing it.
+        // This prevents the black pixel of death, effectively skipping this specific bad sample.
+        imageStore(accumImage, pixelCoords, previousData);
+    }
 
 /*
     // Reference vector pointing down -Z
@@ -209,8 +231,5 @@ void main()
     vec3 color1 = vec3(0.1, 0.1, 0.8); // Blue
     vec3 color2 = vec3(0.8, 0.1, 0.1); // Red
     vec3 color = mix(color1, color2, t);
-    */
-
-// Write the color to the output image
-imageStore(outputImage, pixelCoords, vec4(finalColor, 1.0));
+*/
 }
