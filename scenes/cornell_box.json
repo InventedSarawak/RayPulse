@@ -1,0 +1,95 @@
+{
+  "scene": {
+    "name": "Cornell Box",
+    "version": "1.0"
+  },
+
+  "camera": {
+    "position": [0.0, 1.3, 2.0],
+    "rotation": [0.0, 0.0, 0.0],
+    "fov": 60.0
+  },
+
+  "sky": {
+    "colorTop": [0.0, 0.0, 0.0],
+    "colorBottom": [0.0, 0.0, 0.0]
+  },
+
+  "render": {
+    "width": 800,
+    "height": 800,
+    "samplesPerFrame": 4,
+    "maxSamples": 10000,
+    "maxBounces": 12
+  },
+
+  "materials": [
+    {
+      "name": "white",
+      "template": "lambertian",
+      "albedo": [0.73, 0.73, 0.73]
+    },
+    {
+      "name": "red",
+      "template": "lambertian",
+      "albedo": [0.65, 0.05, 0.05]
+    },
+    {
+      "name": "green",
+      "template": "lambertian",
+      "albedo": [0.12, 0.45, 0.15]
+    },
+    {
+      "name": "light",
+      "template": "emissive",
+      "emission": [1.0, 1.0, 1.0],
+      "emissionStrength": 10.0,
+      "albedo": [1.0, 1.0, 1.0]
+    }
+  ],
+
+  "objects": [
+    {
+      "type": "plane",
+      "normal": [0.0, 1.0, 0.0],
+      "distance": 0.0,
+      "material": "white",
+      "_comment": "Floor"
+    },
+    {
+      "type": "plane",
+      "normal": [0.0, -1.0, 0.0],
+      "distance": -2.0,
+      "material": "white",
+      "_comment": "Ceiling"
+    },
+    {
+      "type": "plane",
+      "normal": [0.0, 0.0, -1.0],
+      "distance": -2.0,
+      "material": "white",
+      "_comment": "Back wall"
+    },
+    {
+      "type": "plane",
+      "normal": [1.0, 0.0, 0.0],
+      "distance": -1.0,
+      "material": "green",
+      "_comment": "Left wall (green)"
+    },
+    {
+      "type": "plane",
+      "normal": [-1.0, 0.0, 0.0],
+      "distance": -1.0,
+      "material": "red",
+      "_comment": "Right wall (red)"
+    },
+    {
+      "type": "sphere",
+      "center": [0.0, 2.0, 0.0],
+      "radius": 0.3,
+      "material": "light",
+      "isLight": true
+    }
+  ]
+}

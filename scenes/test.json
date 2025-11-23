@@ -1,0 +1,101 @@
+{
+  "scene": {
+    "name": "Fabric Showcase",
+    "version": "1.0"
+  },
+
+  "camera": {
+    "position": [0.1, 0.5, 0.0],
+    "rotation": [0.0, 0.0, 0.0],
+    "fov": 60.0
+  },
+
+  "sky": {
+    "colorTop": [0.5, 0.7, 1.0],
+    "colorBottom": [0.98, 0.98, 0.98]
+  },
+
+  "render": {
+    "width": 1600,
+    "height": 900,
+    "samplesPerFrame": 8,
+    "maxSamples": 5000,
+    "maxBounces": 8
+  },
+
+  "materials": [
+    {
+      "name": "ground",
+      "template": "lambertian",
+      "albedo": [0.2, 0.2, 0.2]
+    },
+    {
+      "name": "red_velvet",
+      "template": "velvet",
+      "albedo": [0.8, 0.1, 0.1],
+      "sheen": 1.5
+    },
+    {
+      "name": "blue_satin",
+      "template": "satin",
+      "albedo": [0.1, 0.3, 0.8]
+    },
+    {
+      "name": "green_felt",
+      "template": "velvet",
+      "albedo": [0.1, 0.6, 0.1],
+      "sheen": 0.8
+    },
+    {
+      "name": "yellow_matte",
+      "template": "lambertian",
+      "albedo": [0.8, 0.8, 0.1]
+    },
+    {
+      "name": "point_light",
+      "template": "emissive",
+      "emission": [1.0, 1.0, 1.0],
+      "emissionStrength": 1.5
+    }
+  ],
+
+  "objects": [
+    {
+      "type": "plane",
+      "normal": [0.0, 1.0, 0.0],
+      "distance": 0.5,
+      "material": "ground"
+    },
+    {
+      "type": "sphere",
+      "center": [-2.0, 0.5, -2.5],
+      "radius": 0.5,
+      "material": "red_velvet"
+    },
+    {
+      "type": "sphere",
+      "center": [-0.7, 0.5, -2.5],
+      "radius": 0.5,
+      "material": "blue_satin"
+    },
+    {
+      "type": "sphere",
+      "center": [0.7, 0.5, -2.5],
+      "radius": 0.5,
+      "material": "green_felt"
+    },
+    {
+      "type": "sphere",
+      "center": [2.0, 0.5, -2.5],
+      "radius": 0.5,
+      "material": "yellow_matte"
+    },
+    {
+      "type": "sphere",
+      "center": [0.0, 3.5, -1.0],
+      "radius": 0.8,
+      "material": "point_light",
+      "isLight": true
+    }
+  ]
+}

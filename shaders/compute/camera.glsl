@@ -12,3 +12,5 @@ uniform uint frameCount;
 uniform int samplesPerFrame;
 uniform int maxTotalSamples;
 uniform uint maxBounces;
+
+uniform int lightCount;

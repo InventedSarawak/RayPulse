@@ -4,14 +4,20 @@ project(
     meson_version : '>= 1.3.0',
     version : '0.1',
     default_options : [
-        'warning_level=3'
+        'warning_level=3',
+        'cpp_std=c++latest',
     ],
 )
 
 c_compiler = meson.get_compiler('c')
+cpp_compiler = meson.get_compiler('cpp')
 
 if c_compiler.get_id() == 'clang-cl'
     add_project_arguments('-Wno-c23-extensions', language : 'c')
+endif
+
+if cpp_compiler.get_id() == 'clang-cl' or cpp_compiler.get_id() == 'msvc'
+    add_project_arguments('/std:c++latest', language : 'cpp')
 endif
 
 lib_include_dir = include_directories('../libraries/include')
@@ -83,26 +89,18 @@ openexr_dlls = [
     'openjph.0.24.dll',
 ]
 
-# --- DLL COPY SETUP ---
-
-# 1. Source files for install_data (DLLs are physically located in ../libraries/lib/)
 full_dll_paths = []
 foreach dll_name : openexr_dlls
     full_dll_paths += '..//libraries/lib/' + dll_name
 endforeach
 
-# 2. Add glfw3.dll to the list of DLLs that need copying
 all_runtime_dlls = openexr_dlls + ['glfw3.dll']
 
-# 3. Define the directory paths for the custom target
 powershell_cmd = find_program('powershell')
-# Source: points to the 'lib' folder where all DLLs are now located
 dll_source_dir = '../../libraries/lib/*'
-# Destination: the build root (where the executable is)
 dll_target_dir = './'
 
 
-# Install the DLLs during the install step
 install_data(
     sources : files(full_dll_paths),
     install_dir : get_option('bindir'),
@@ -110,16 +108,12 @@ install_data(
 )
 
 
-# For running *during* development (the actual runtime fix)
 copy_runtime_dlls = custom_target('copy_runtime_dlls',
-                                  # Input list is used for dependency tracking
                                   input : files(full_dll_paths, '../libraries/lib/glfw3.dll'),
 
-                                  # Output is the list of ALL base DLL names
                                   output : all_runtime_dlls,
                                   build_always_stale : true,
 
-                                  # FIX: Use Copy-Item with explicit path variables
                                   command : [powershell_cmd,
                                              '-Command',
                                              'Copy-Item',
@@ -140,7 +134,7 @@ compute_shader_spv = custom_target('compile_compute_shader',
                                        glslc,
                                        '-fshader-stage=compute',
                                        '--target-env=opengl',
-                                       '-fauto-map-locations', # Fixes the layout(location) errors
+                                       '-fauto-map-locations',
                                        '-g',
                                        '@INPUT@',
                                        '-o', '@OUTPUT@'
@@ -161,8 +155,16 @@ dependencies = [
 
 executable(
     'main',
-    ['src/main.cpp', 'src/texture.cpp', 'src/shader.cpp', 'src/renderer.cpp', 'src/export.cpp']
-    + imgui_sources,
+    [
+        'src/main.cpp',
+        'src/texture.cpp',
+        'src/shader.cpp',
+        'src/renderer.cpp',
+        'src/export.cpp',
+        'src/SceneLoader.cpp',
+        'src/MaterialFactory.cpp',
+        'src/SceneBuilder.cpp'
+    ] + imgui_sources,
     dependencies : dependencies,
     include_directories : [lib_include_dir, prj_include_dir, glm_include_dir, imath_include_dir, imgui_include_dir],
     link_depends : [compute_shader_spv, copy_runtime_dlls],

@@ -87,9 +87,34 @@ void MaterialBuffer::bind(GLuint bindingPoint) const {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, ssbo);
 }
 
+LightBuffer::LightBuffer() {
+    glGenBuffers(1, &ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+LightBuffer::~LightBuffer() {
+    glDeleteBuffers(1, &ssbo);
+}
+
+void LightBuffer::update(const std::vector<int>& lightIndices) const {
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+                 lightIndices.size() * sizeof(int),
+                 lightIndices.data(),
+                 GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void LightBuffer::bind(GLuint bindingPoint) const {
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, ssbo);
+}
+
 void dispatchComputeShader(const GLuint program, const GLuint accumTexture, const GLuint outputTexture,
     const RaytracerDimensions raytracer_dimensions, CameraParams camera_params, SkyParams sky_params,
-    const size_t objectCount, const int samplesPerFrame, const int maxTotalSamples, const uint32_t maxBounces) {
+    const size_t objectCount, const int lightCount,
+    const int samplesPerFrame, const int maxTotalSamples, const uint32_t maxBounces) {
     glUseProgram(program);
 
     glBindImageTexture(0, outputTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
@@ -116,6 +141,8 @@ void dispatchComputeShader(const GLuint program, const GLuint accumTexture, cons
     glUniform1i(glGetUniformLocation(program, "maxTotalSamples"), maxTotalSamples);
 
     glUniform1ui(glGetUniformLocation(program, "maxBounces"), maxBounces);
+
+    glUniform1i(glGetUniformLocation(program, "lightCount"), lightCount);
 
     // Dispatch compute shader
     // Calculate number of work groups needed: ceil to next multiple of 16

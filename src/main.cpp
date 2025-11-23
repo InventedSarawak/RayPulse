@@ -12,6 +12,10 @@
 #include "texture.h"
 #include "renderer.h"
 #include "export.h"
+#include "MaterialFactory.h"
+#include "paths.h"
+#include "SceneBuilder.h"
+#include "SceneLoader.h"
 
 #define INIT_WINDOW_WIDTH 1600
 #define INIT_WINDOW_HEIGHT 900
@@ -55,7 +59,7 @@ struct UIResolution{
     int height;
 };
 
-void createUIFramebuffer(int width, int height, GLuint* fbo, GLuint* tex) {
+void createUIFramebuffer(const int width, const int height, GLuint* fbo, GLuint* tex) {
     if (*fbo)
         glDeleteFramebuffers(1, fbo);
     if (*tex)
@@ -75,7 +79,6 @@ void createUIFramebuffer(int width, int height, GLuint* fbo, GLuint* tex) {
 }
 
 int main() {
-    // 1. Initialize GLFW
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
@@ -92,17 +95,14 @@ int main() {
 
     glfwSwapInterval(0);
 
-    // 2. Initialize GLAD
     const int version = gladLoadGL(glfwGetProcAddress);
     if (version == 0) return -1;
 
-    // 3. Get Monitor Refresh Rate
     GLFWmonitor* primaryMonitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* videoMode = glfwGetVideoMode(primaryMonitor);
     int monitorRefreshRate = videoMode->refreshRate;
     if (monitorRefreshRate <= 1) monitorRefreshRate = 60;
 
-    // 4. Initialize ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -113,63 +113,66 @@ int main() {
 
     // 5. Create Resources
     GLuint renderProgram = createShaderProgramFromFiles("shaders/vertex.glsl", "shaders/fragment.glsl");
-    GLuint computeProgram = createComputeProgramFromBinary("./buildDir/main.spv");
+    std::string shaderPath = getResourcePath("main.spv");
+    GLuint computeProgram = createComputeProgramFromBinary(shaderPath.c_str());
 
-    // 6. Accumulation Buffer: Stores the raw sum of all samples (Must be 32F for precision)
-    RayTexture accumTexture = createTexture(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT, GL_RGBA32F);
+    auto sceneConfigOpt = SceneLoader::loadFromFile("./scenes/roughness_study.json");
+    if (!sceneConfigOpt.has_value()) {
+        printf("ERROR: Failed to load scene: %s\n", SceneLoader::getLastError().c_str());
+        glfwTerminate();
+        return -1;
+    }
 
-    // 7. Output Buffer: Stores the averaged result for display
-    RayTexture outputTexture = createTexture(INIT_WINDOW_WIDTH, INIT_WINDOW_HEIGHT, GL_RGBA32F);
+    SceneConfig sceneConfig = sceneConfigOpt.value();
+    std::string validationError;
+    if (!SceneBuilder::validate(sceneConfig, validationError)) {
+        printf("ERROR: Scene validation failed: %s\n", validationError.c_str());
+        glfwTerminate();
+        return -1;
+    }
 
-    // Input variables for the GUI (initialized to start resolution)
-    int targetRenderWidth = INIT_WINDOW_WIDTH;
-    int targetRenderHeight = INIT_WINDOW_HEIGHT;
-
-    QuadRenderer quadRenderer;
+    SceneData sceneData = SceneBuilder::buildScene(sceneConfig);
 
     SceneBuffer sceneBuffer;
     MaterialBuffer materialBuffer;
-    std::vector<GPUObject> objects;
-    std::vector<GPUMaterial> materials;
+    LightBuffer lightBuffer;
 
-    const int matGround = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.2f, 0.2f, 0.2f)));
-
-    const int matVelvet = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Velvet(glm::vec3(0.8f, 0.1f, 0.1f), 1.5f));
-
-    // 2. BLUE SATIN (moderate sheen + specular)
-    const int matSatin = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Satin(glm::vec3(0.1f, 0.3f, 0.8f)));
-
-    // 3. GREEN FELT (medium sheen)
-    const int matFelt = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Velvet(glm::vec3(0.1f, 0.6f, 0.1f), 0.8f));
-
-    // 4. Reference matte (no sheen)
-    const int matMatte = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Lambertian(glm::vec3(0.8f, 0.8f, 0.1f)));
-
-    const int matLight = static_cast<int>(materials.size());
-    materials.push_back(MaterialBuilder::Emissive(glm::vec3(1.0f), 1.5f));
-
-    objects.push_back(makePlane(glm::vec3(0.0f, 1.0f, 0.0f), 0.5f, matGround));
-
-
-    objects.push_back(makeSphere(glm::vec3(-2.0f, 0.5f, -2.5f), 0.5f, matVelvet));
-    objects.push_back(makeSphere(glm::vec3(-0.7f, 0.5f, -2.5f), 0.5f, matSatin));
-    objects.push_back(makeSphere(glm::vec3(0.7f, 0.5f, -2.5f), 0.5f, matFelt));
-    objects.push_back(makeSphere(glm::vec3(2.0f, 0.5f, -2.5f), 0.5f, matMatte));
-
-    // Keep your light source
-    objects.push_back(makeSphere(glm::vec3(0.0f, 3.5f, -1.0f), 0.8f, matLight));
-
-    sceneBuffer.update(objects);
+    sceneBuffer.update(sceneData.objects);
     sceneBuffer.bind(1);
-    materialBuffer.update(materials);
+    materialBuffer.update(sceneData.materials);
     materialBuffer.bind(2);
+    lightBuffer.update(sceneData.lightIndices);
+    lightBuffer.bind(3);
 
-    // Create UI Cache (Tracks Window Size)
+    auto cameraRot = glm::vec3{0.0f, 0.0f, 0.0f};
+    CameraParams camera_params = {
+        sceneConfig.camera.position,
+        glm::vec3(0.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f),
+        sceneConfig.camera.fov,
+        0
+    };
+    calculateBasisFromEuler(cameraRot[0], cameraRot[1], cameraRot[2],
+                            camera_params.forward, camera_params.right, camera_params.up);
+
+
+    SkyParams sky_params = {
+        sceneConfig.sky.colorTop,
+        sceneConfig.sky.colorBottom
+    };
+
+    int targetRenderWidth = sceneConfig.render.width;
+    int targetRenderHeight = sceneConfig.render.height;
+    int samplesPerFrame = sceneConfig.render.samplesPerFrame;
+    int maxSamples = sceneConfig.render.maxSamples;
+    int maxBounces = sceneConfig.render.maxBounces;
+
+    RayTexture accumTexture = createTexture(targetRenderWidth, targetRenderHeight, GL_RGBA32F);
+    RayTexture outputTexture = createTexture(targetRenderWidth, targetRenderHeight, GL_RGBA32F);
+
+    QuadRenderer quadRenderer;
+
     GLuint uiFBO = 0;
     GLuint uiTexture = 0;
     UIResolution currentUIRes = {0, 0}; // Force initial creation
@@ -179,25 +182,8 @@ int main() {
     glGenQueries(1, &timeQuery);
     GLuint64 elapsedNanoseconds = 0;
 
-    // Scene Params
     bool isRendering = true;
-    int samplesPerFrame = 8; // Low number = fast UI, slow image
-    int maxSamples = 5000; // Stop after this many samples
     bool accumulationPaused = false;
-    auto cameraRot = glm::vec3{0.0f, 0.0f, 0.0f};
-
-    CameraParams camera_params = {
-        glm::vec3{0.1f, 0.5f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 0.0f},
-        glm::vec3{0.0f, 0.0f, 0.0f}, 60.0f, 0
-        };
-    calculateBasisFromEuler(cameraRot[0], cameraRot[1], cameraRot[2],
-                            camera_params.forward, camera_params.right, camera_params.up);
-
-    int samplesPerPixel = 4;
-    int maxBounces = 8;
-
-    SkyParams sky_params = {glm::vec3{0.5, 0.7, 1.0}, glm::vec3{0.98, 0.98, 0.98}};
-
 
     // Dynamic UI Interval based on Monitor Hz
     double uiUpdateInterval = 1.0 / static_cast<double>(monitorRefreshRate);
@@ -225,7 +211,9 @@ int main() {
             glBeginQuery(GL_TIME_ELAPSED, timeQuery);
             dispatchComputeShader(computeProgram, accumTexture.id, outputTexture.id,
                                   {accumTexture.width, accumTexture.height}, camera_params, sky_params,
-                                  objects.size(), samplesPerFrame, maxSamples,
+                                  sceneData.objects.size(),
+                                  static_cast<int>(sceneData.lightIndices.size()),
+                                  samplesPerFrame, maxSamples,
                                   static_cast<uint32_t>(maxBounces));
             glEndQuery(GL_TIME_ELAPSED);
             camera_params.frameCount += 1;
@@ -234,11 +222,22 @@ int main() {
 
         // 1. Render the Raytraced Texture to the default framebuffer (The Screen)
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, winWidth, winHeight); // Stretch to fill window
+        glViewport(0, 0, winWidth, winHeight);
         glDisable(GL_BLEND);
         glUseProgram(renderProgram);
+
+        // Pass resolution uniforms for aspect ratio correction
+        glUniform2f(glGetUniformLocation(renderProgram, "renderResolution"),
+                    static_cast<float>(outputTexture.width),
+                    static_cast<float>(outputTexture.height));
+        glUniform2f(glGetUniformLocation(renderProgram, "windowResolution"),
+                    static_cast<float>(winWidth),
+                    static_cast<float>(winHeight));
+
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, outputTexture.id);
+        glUniform1i(glGetUniformLocation(renderProgram, "rayTexture"), 0);
+
         quadRenderer.render();
 
         // 2. Render UI
@@ -404,14 +403,26 @@ int main() {
         }
 
         // Composite UI on top
+        // Composite UI on top
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, winWidth, winHeight);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         glUseProgram(renderProgram);
+
+        // UI always fills the screen - set to window resolution for both
+        glUniform2f(glGetUniformLocation(renderProgram, "renderResolution"),
+                    static_cast<float>(winWidth),
+                    static_cast<float>(winHeight));
+        glUniform2f(glGetUniformLocation(renderProgram, "windowResolution"),
+                    static_cast<float>(winWidth),
+                    static_cast<float>(winHeight));
+
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, uiTexture);
+        glUniform1i(glGetUniformLocation(renderProgram, "rayTexture"), 0);
+
         quadRenderer.render();
 
         processInput(window);

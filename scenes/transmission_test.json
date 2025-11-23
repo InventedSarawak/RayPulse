@@ -1,0 +1,45 @@
+{
+  "scene": {
+    "name": "Transmission Test",
+    "version": "1.0"
+  },
+  "camera": {
+    "position": [0.0, 1.0, 3.5],
+    "rotation": [-10.0, 0.0, 0.0],
+    "fov": 35.0
+  },
+  "sky": {
+    "colorTop": [0.8, 0.9, 1.0],
+    "colorBottom": [1.0, 1.0, 1.0]
+  },
+  "render": {
+    "width": 1280,
+    "height": 720,
+    "samplesPerFrame": 4,
+    "maxSamples": 5000,
+    "maxBounces": 12
+  },
+  "materials": [
+    { "name": "floor", "template": "lambertian", "albedo": [0.5, 0.5, 0.5] },
+    { "name": "wall_blue", "template": "lambertian", "albedo": [0.1, 0.1, 0.8] },
+    { "name": "wall_orange", "template": "lambertian", "albedo": [0.8, 0.4, 0.1] },
+
+    { "name": "water_orb", "template": "glass", "ior": 1.33, "absorption": [0.1, 0.05, 0.05] },
+    { "name": "ruby_orb", "template": "glass", "ior": 1.5, "absorption": [0.0, 4.0, 4.0] },
+    { "name": "diamond_orb", "template": "glass", "ior": 2.4, "absorption": [0.0, 0.0, 0.0] },
+
+    { "name": "sun", "template": "emissive", "emission": [1.0, 0.9, 0.8], "emissionStrength": 15.0 }
+  ],
+  "objects": [
+    { "type": "plane", "normal": [0.0, 1.0, 0.0], "distance": 0.0, "material": "floor" },
+
+    { "type": "plane", "normal": [0.0, 0.0, -1.0], "distance": -4.0, "material": "wall_blue" },
+    { "type": "plane", "normal": [1.0, 0.0, 0.2], "distance": -2.0, "material": "wall_orange" },
+
+    { "type": "sphere", "center": [-1.2, 0.5, 0.0], "radius": 0.5, "material": "water_orb" },
+    { "type": "sphere", "center": [ 0.0, 0.5, 0.0], "radius": 0.5, "material": "ruby_orb" },
+    { "type": "sphere", "center": [ 1.2, 0.5, 0.0], "radius": 0.5, "material": "diamond_orb" },
+
+    { "type": "sphere", "center": [2.0, 4.0, 1.0], "radius": 0.5, "material": "sun", "isLight": true }
+  ]
+}

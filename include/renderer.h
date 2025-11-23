@@ -81,6 +81,18 @@ private:
     GLuint ssbo{};
 };
 
+class LightBuffer {
+public:
+    LightBuffer();
+    ~LightBuffer();
+
+    void update(const std::vector<int>& lightIndices) const;
+    void bind(GLuint bindingPoint) const;
+
+private:
+    GLuint ssbo{};
+};
+
 typedef struct{
     int width, height;
 } RaytracerDimensions;
@@ -99,5 +111,7 @@ typedef struct{
     glm::vec3 colorBottom;
 } SkyParams;
 
-void dispatchComputeShader(GLuint program, GLuint accumTexture, GLuint outputTexture, RaytracerDimensions raytracer_dimensions,
-    CameraParams camera_params, SkyParams sky_params, size_t objectCount, int samplesPerFrame, int maxTotalSamples, uint32_t maxBounces);
+void dispatchComputeShader(GLuint program, GLuint accumTexture, GLuint outputTexture,
+    RaytracerDimensions raytracer_dimensions, CameraParams camera_params, SkyParams sky_params,
+    size_t objectCount, int lightCount,
+    int samplesPerFrame, int maxTotalSamples, uint32_t maxBounces);

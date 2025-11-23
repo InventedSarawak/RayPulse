@@ -31,8 +31,11 @@ layout(std430, binding = 1) readonly buffer SceneBuffer {
     GPUObject objects[];
 };
 
-uniform int objectCount;
+layout(std430, binding = 3) readonly buffer LightBuffer {
+    int lightIndices[];
+};
 
+uniform int objectCount;
 
 bool hitSphere(vec4 data1, vec4 data2, vec3 rayOrigin, vec3 rayDir, float tMin, float tMax, inout HitRecord rec) {
     vec3 center = data1.xyz;
