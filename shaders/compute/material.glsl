@@ -1,6 +1,7 @@
 // Emission mode constants
 #define EMISSION_PHYSICAL  0
 #define EMISSION_ABSOLUTE  1
+#define PI 3.14159265359
 
 // Unified material descriptor (112 bytes, std430 aligned)
 // MATCHES C++ struct GPUMaterial exactly
@@ -293,4 +294,79 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
     }
 
     return true;
+}
+
+// =========================================================================
+// PBR MATH FUNCTIONS FOR NEE (Direct Lighting Evaluation)
+// These implement the explicit analytical evaluation of the BRDF
+// =========================================================================
+
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float num = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return num / max(denom, 0.0001);
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    // For direct lighting, k = (r + 1)^2 / 8
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+
+    float num = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return num / max(denom, 0.0001);
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+    return ggx1 * ggx2;
+}
+
+// Accurate evaluation of the BRDF for a specific light direction L
+vec3 evalBRDF(Material mat, vec3 N, vec3 V, vec3 L) {
+    // 1. Transmission / Mirror check
+    // NEE is not efficient for these, return 0
+    if (mat.transmission > 0.5 || mat.roughness < 0.05) {
+        return vec3(0.0);
+    }
+
+    vec3 H = normalize(V + L);
+    float NdotV = max(dot(N, V), 0.001);
+    float NdotL = max(dot(N, L), 0.001);
+
+    // --- Specular Component (Cook-Torrance) ---
+    vec3 F0 = calculateF0(mat.albedo, mat.metallic, mat.specularTint, mat.specular);
+
+    float NDF = DistributionGGX(N, H, mat.roughness);
+    float G = GeometrySmith(N, V, L, mat.roughness);
+    vec3 F = schlickFresnelVec(max(dot(H, V), 0.0), F0);
+
+    vec3 numerator = NDF * G * F;
+    float denominator = 4.0 * NdotV * NdotL;
+    vec3 specular = numerator / max(denominator, 0.0001);
+
+    // --- Diffuse Component (Lambertian) ---
+    // kS is the ratio of energy that gets reflected (Fresnel)
+    vec3 kS = F;
+    // kD is the remaining energy that gets refracted/absorbed (Diffuse)
+    vec3 kD = vec3(1.0) - kS;
+    // Metals have no diffuse reflection
+    kD *= (1.0 - mat.metallic);
+
+    vec3 diffuse = kD * mat.albedo / PI;
+
+    // Combine
+    return (diffuse + specular) * NdotL;
 }

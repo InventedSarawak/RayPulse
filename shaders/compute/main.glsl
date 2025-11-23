@@ -26,60 +26,53 @@ vec3 sampleSky(vec3 rayDir) {
     return mix(skyColorBottom, skyColorTop, t);
 }
 
-vec4 sampleTintSources(vec3 surfacePos, vec3 surfaceNormal, int ignoreObjIndex) {
-    vec3 accumulatedTint = vec3(0.0);
-    float totalInfluence = 0.0;
+// Samples a point on a spherical light source
+// Returns the Light Color * BRDF * weighting
+vec3 sampleDirectLight(vec3 surfacePos, vec3 surfaceNormal, vec3 V, Material surfaceMat, int lightObjIndex) {
 
-    for (int i = 0; i < objectCount; i++) {
-        if (i == ignoreObjIndex) continue;
+    // 1. Get Light Data
+    GPUObject lightObj = objects[lightObjIndex];
+    vec3 lightPos = lightObj.data1.xyz;
+    float lightRadius = lightObj.data1.w;
+    Material lightMat = materials[int(lightObj.data2.x)];
 
-        GPUObject obj = objects[i];
-        Material mat = materials[int(obj.data2.x)];
+    // 2. Pick a random point on the light (Uniform Area Sampling)
+    vec3 randomOnSphere = randomPointOnUnitSphere();
+    vec3 lightSamplePos = lightPos + randomOnSphere * lightRadius;
 
-        if (mat.emissionMode == EMISSION_ABSOLUTE && mat.emissionStrength > 0.0) {
+    // 3. Construct Light Vector (L)
+    vec3 toLight = lightSamplePos - surfacePos;
+    float distSq = dot(toLight, toLight);
+    float dist = sqrt(distSq);
+    vec3 L = normalize(toLight);
 
-            vec3 targetCenter = obj.data1.xyz;
-            float targetRadius = obj.data1.w;
+    // 4. Geometry Check: Is the light below the horizon?
+    float NdotL = dot(surfaceNormal, L);
+    if (NdotL <= 0.0) return vec3(0.0);
 
-            vec3 randomOffset = randomPointOnUnitSphere();
+    // 5. Shadow Ray Cast
+    // Offset slightly to avoid self-intersection acne
+    HitRecord shadowRec;
+    bool occluded = hitWorld(surfacePos + surfaceNormal * 0.001, L, 0.001, dist - 0.01, shadowRec);
 
-            vec3 targetPoint = targetCenter + (randomOffset * targetRadius);
+    if (occluded) return vec3(0.0); // In shadow
 
-            vec3 toLight = targetPoint - surfacePos;
-            float distToCenter = length(toLight);
-            vec3 L = normalize(toLight);
+    // 6. Calculate Light Intensity (Inverse Square Law)
+    // Area of sphere = 4 * PI * r^2
+    float lightArea = 4.0 * PI * lightRadius * lightRadius;
 
-            // Angle of Incidence (Lambert Law)
-            float NdotL = max(dot(surfaceNormal, L), 0.0);
+    // PDF (Probability Density Function) for area sampling: 1 / Area
+    // Conversion to Solid Angle PDF: dist^2 / (cos(theta_light) * Area)
+    // For a sphere, cos(theta_light) at the sampled point (normal pointing to center) is 1.0
+    // Weight = 1 / PDF_solidAngle = Area / dist^2
+    float weight = lightArea / max(distSq, 0.001);
 
-            // If facing away, no tint
-            if (NdotL <= 0.0) continue;
+    vec3 lightRadiance = lightMat.emission * lightMat.emissionStrength * weight;
 
-            float distToSurface = distToCenter - targetRadius;
+    // 7. Calculate BRDF (Surface response) using accurate PBR evaluation
+    vec3 brdf = evalBRDF(surfaceMat, surfaceNormal, V, L);
 
-            if (distToSurface > 0.001) {
-                HitRecord shadowRec;
-                // Shadow Check
-                bool occluded = hitWorld(surfacePos + surfaceNormal * 0.001, L, 0.001, distToSurface - 0.01, shadowRec);
-
-                if (!occluded) {
-                    // Magical Falloff
-                    float attenuation = 1.0 / (1.0 + pow(distToSurface * 0.01f, 0.8f));
-
-                    // Calculate Influence Factor (0.0 to 1.0)
-                    // We clamp 'emissionStrength' logic so it acts as opacity.
-                    float influence = mat.emissionStrength * attenuation * NdotL;
-
-                    // Accumulate
-                    accumulatedTint += mat.emission * influence;
-                    totalInfluence += influence;
-                }
-            }
-        }
-    }
-
-    // Clamp influence to 1.0 so we don't create negative light (black holes)
-    return vec4(accumulatedTint, min(totalInfluence, 1.0));
+    return lightRadiance * brdf;
 }
 
 
@@ -89,47 +82,60 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
     vec3 currentOrigin = rayOrigin;
     vec3 currentDir = rayDir;
 
+    // Hardcoded logic to find the light (last object)
+    // In a production engine, you would iterate a list of emissive objects
+    int lightIndex = objectCount - 1;
+
     for (uint bounce = 0u; bounce < maxBounces; ++bounce) {
         HitRecord rec;
 
         if (hitWorld(currentOrigin, currentDir, 0.001, INFINITY, rec)) {
             Material mat = materials[rec.matIndex];
 
+            // 1. EMISSION (Direct Hit)
+            // -----------------------------------------------------------
+            // If we hit the light by luck (indirect bounce), we must be careful.
+            // If this is the FIRST bounce (bounce == 0), we keep it (so we can see the light source itself).
+            // If it's a later bounce, we discard it because NEE already handled it
+            // at the previous bounce (Double Counting prevention).
+            // Exception: If the material is a mirror (roughness < 0.05), NEE didn't happen, so we keep it.
+            bool isSpecular = mat.roughness < 0.05 || mat.transmission > 0.5;
+
+            if (rec.objIndex == lightIndex) {
+                // If we hit the light directly
+                if (bounce == 0 || isSpecular) {
+                    radiance += throughput * mat.emission * mat.emissionStrength;
+                }
+                // Stop tracing if we hit a light
+                break;
+            }
+
+            // Other emissive objects (non-NEE lights)
+            if (rec.objIndex != lightIndex && mat.emissionStrength > 0.0) {
+                radiance += throughput * mat.emission * mat.emissionStrength;
+            }
+
             // ===========================================================
             // BEER'S LAW (Volumetric Absorption)
             // ===========================================================
-            // If we hit a BACK face (!frontFace), and the material is transmissive,
-            // it means the ray just traveled 'rec.t' distance THROUGH the medium.
             if (!rec.frontFace && mat.transmission > 0.5) {
                 vec3 absorption = mat.absorption;
                 float distanceTraveled = rec.t;
-
-                // I = I₀ * exp(-absorption * distance)
                 vec3 transmittance = exp(-absorption * distanceTraveled);
                 throughput *= transmittance;
             }
+
             // ===========================================================
-
-
-            // 1. DIRECT VISIBILITY (Emission)
-            if (mat.emissionMode == EMISSION_ABSOLUTE) {
-                radiance += throughput * mat.emission * mat.emissionStrength;
-                break;
-            }
-            else if (mat.emissionMode == EMISSION_PHYSICAL && mat.emissionStrength > 0.0) {
-                radiance += throughput * mat.emission * mat.emissionStrength;
+            // NEXT EVENT ESTIMATION (Direct Light Sampling)
+            // ===========================================================
+            // Only perform NEE on non-specular surfaces
+            if (!isSpecular && bounce < maxBounces - 1) {
+                vec3 V = -currentDir; // View direction is opposite to ray direction
+                vec3 directLight = sampleDirectLight(rec.p, rec.normal, V, mat, lightIndex);
+                radiance += throughput * directLight;
             }
 
-            // 2. INDIRECT TINTING (Color filters)
-            if (mat.transmission < 0.5 && mat.metallic < 0.9) {
-                vec4 tintData = sampleTintSources(rec.p, rec.normal, -1);
-                vec3 tintColor = tintData.rgb;
-                float tintFactor = tintData.a;
-                radiance += throughput * tintColor;
-                throughput *= (1.0 - tintFactor);
-            }
-
-            // 3. SCATTERING
+            // 3. SCATTERING (Indirect Bounce)
             vec3 attenuation;
             vec3 scattered;
             if (scatter(mat, currentDir, rec, attenuation, scattered)) {
@@ -191,45 +197,26 @@ void main()
 
         vec3 rayOrigin = cameraOrigin;
         vec3 rayDir = normalize(cameraForward +
-        (ndc.x * planeScale * cameraRight) +
-        (ndc.y * planeScale * cameraUp));
+                                (ndc.x * planeScale * cameraRight) +
+                                (ndc.y * planeScale * cameraUp));
 
         newColorSum += traceRay(rayOrigin, rayDir);
     }
 
     if (isSafe(newColorSum)) {
+        // 1. Accumulate
         vec3 totalSum = previousData.rgb + newColorSum;
         float totalSamples = currentSampleCount + float(samplesPerFrame);
         imageStore(accumImage, pixelCoords, vec4(totalSum, totalSamples));
 
-        // Update display buffer
+        // 2. Calculate Average (Linear Space)
         vec3 finalColor = totalSum / totalSamples;
+
+        // 3. Write directly to output (No Tone Mapping)
         imageStore(outputImage, pixelCoords, vec4(finalColor, 1.0));
     }
     else {
         // If we got a NaN, just write back the OLD data without changing it.
-        // This prevents the black pixel of death, effectively skipping this specific bad sample.
         imageStore(accumImage, pixelCoords, previousData);
     }
-
-/*
-    // Reference vector pointing down -Z
-    vec3 refVector = vec3(0.0, 0.0, -1.0);
-
-    // Calculate angle using dot product
-    // dot(a,b) = |a||b|cos(theta) => theta = acos(dot(a,b)/(|a||b|)), |a|=|b|=1 since normalized
-    float cosTheta = dot(rayDir, refVector);
-    float angle = acos(cosTheta); // in radians
-
-    float cornerDist = length(vec2(aspectRatio, 1.0)); // Distance from center in NDC space
-    // Map angle to color
-    // Angles range from 0 (center, parallel) to ~1.57 radians (90°, edges)
-    float maxAngle = atan(cornerDist / 1.0); // FOV dependent max angle
-    float t = clamp(angle / maxAngle, 0.0, 1.0);
-
-    // Color gradient from blue (center) to red (edges)
-    vec3 color1 = vec3(0.1, 0.1, 0.8); // Blue
-    vec3 color2 = vec3(0.8, 0.1, 0.1); // Red
-    vec3 color = mix(color1, color2, t);
-*/
 }
