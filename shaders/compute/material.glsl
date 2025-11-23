@@ -9,7 +9,9 @@ struct Material {
     vec3 specularTint; float specular;
     float clearcoat; float clearcoatRoughness; float subsurface; int emissionMode;
     vec3 absorption; float sheen;
-    float subsurfaceRadius; float scatteringAnisotropy; float _pad1; float _pad2;
+    float subsurfaceRadius; float scatteringAnisotropy;
+    float bloomIntensity;
+    float _pad2;
 };
 
 layout(std430, binding = 2) readonly buffer MaterialBuffer {
@@ -44,10 +46,6 @@ vec3 calculateF0(vec3 albedo, float metallic, vec3 specularTint, float specular)
     return mix(dielectricF0, metallicF0, metallic);
 }
 
-// --- MODIFIED FRESNEL ---
-// Uses Sébastien Lagarde's spherical gaussian approximation for roughness interaction
-// or the standard Disney "max(1.0 - roughness, F0)" trick.
-// This kills the "wet edges" on rough surfaces.
 vec3 schlickFresnelRoughness(float cosine, vec3 f0, float roughness) {
     // The "1.0 - roughness" term dampens the grazing angle reflection
     return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(max(0.0, 1.0 - cosine), 5.0);
@@ -100,8 +98,6 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
     vec3 N = rec.normal;
     vec3 V = -normalize(rayDir);
 
-    // 1. TRANSMISSION (Glass/Liquid)
-    // Priority 1: If it's glass, we treat it purely as glass (no diffuse mixing).
     if (mat.transmission > 0.01) {
         float refractionRatio = rec.frontFace ? (1.0 / mat.ior) : mat.ior;
         vec3 unitDir = normalize(rayDir);
@@ -125,7 +121,6 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
     float NdotV = max(dot(N, V), 0.001);
     bool hasClearcoat = mat.clearcoat > 0.01;
 
-    // 2. CLEARCOAT
     if (hasClearcoat) {
         float clearcoatF = clearcoatFresnel(NdotV);
         float clearcoatProb = clamp(mat.clearcoat * clearcoatF * 2.0, 0.0, 0.9);
@@ -145,32 +140,16 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
         }
     }
 
-    // 3. BASE LAYER (Metal/Plastic/Lambertian)
     vec3 f0 = calculateF0(mat.albedo, mat.metallic, mat.specularTint, mat.specular);
     vec3 fresnel = schlickFresnelRoughness(NdotV, f0, mat.roughness);
     float fresnelAvg = (fresnel.r + fresnel.g + fresnel.b) / 3.0;
 
-    // --- PROBABILITY SELECTION (MIS-style) ---
-    // Instead of arbitrary dampening, we use the Fresnel term as the probability
-    // to choose between Specular and Diffuse.
-    //
-    // High Fresnel (Metal or Grazing Angle) -> High Specular Probability
-    // Low Fresnel (Plastic facing camera) -> High Diffuse Probability
-
     float specularProbability = fresnelAvg;
 
-    // Correction for Metals: Metals are 100% specular (no diffuse lobe).
-    // So if metallic is 1.0, specularProbability must be 1.0.
     specularProbability = mix(specularProbability, 1.0, mat.metallic);
 
-    // Correction for Roughness:
-    // As roughness increases, the specular lobe becomes less distinct.
-    // At Roughness 1.0, a dielectric surface is effectively Lambertian.
-    // We linearly fade the probability of choosing the specular lobe to 0 as roughness -> 1.
-    // This removes the "glossy reflections on rough walls" artifact.
     float roughnessFactor = 1.0 - mat.roughness;
 
-    // Apply roughness fade ONLY to dielectrics. Metals stay specular even if rough.
     float selectionProbability = specularProbability;
     if (mat.metallic < 0.01) {
         selectionProbability *= (roughnessFactor * roughnessFactor); // Quadratic fade for smoother transition
@@ -179,15 +158,10 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
     selectionProbability = clamp(selectionProbability, 0.0, 1.0);
 
     if (randomFloat() < selectionProbability) {
-        // --- SPECULAR LOBE ---
         vec3 H = sampleGGXMicrofacet(mat.roughness, N);
         scattered = reflect(-V, H);
 
-        // Check for invalid bounce (below horizon)
         if (dot(scattered, N) <= 0.0) {
-            // In a sophisticated tracer we would retry or kill.
-            // Here we kill it (return false) or fallback.
-            // Killing it is safer for energy conservation than flipping normals.
             return false;
         }
 
@@ -200,7 +174,6 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
         attenuation = F / max(selectionProbability, 0.001);
         isSpecularBounce = true;
     } else {
-        // --- DIFFUSE LOBE ---
         scattered = sampleCosineHemisphere(N);
         vec3 diffuseColor = mat.albedo * (1.0 - mat.metallic);
 
@@ -208,11 +181,6 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
 
         // Energy Conservation:
         // Diffuse Energy = (1 - Fresnel) * Albedo
-        // We use the same 'fresnelAvg' we calculated earlier for consistency.
-        // Important: We must not subtract too much energy if we *didn't* select specular
-        // because of roughness.
-
-        // Effective Fresnel for energy subtraction logic (matches the fade we applied above)
         float effectiveFresnel = fresnelAvg;
         if (mat.metallic < 0.01) {
             effectiveFresnel *= (roughnessFactor * roughnessFactor);
@@ -225,14 +193,12 @@ bool scatter(Material mat, vec3 rayDir, HitRecord rec, out vec3 attenuation, out
         isSpecularBounce = false;
     }
 
-    // 4. SHEEN
     if (mat.sheen > 0.01 && mat.metallic < 0.9) {
         float sheenFactor = pow(1.0 - NdotV, 5.0);
         vec3 sheenColor = mix(vec3(1.0), mat.albedo, 0.5);
         attenuation += mat.sheen * sheenFactor * sheenColor;
     }
 
-    // 5. ATTENUATION (Clearcoat absorption)
     if (hasClearcoat) {
         float transmission = clearcoatAttenuation(mat.clearcoat, NdotV);
         float clearcoatF = clearcoatFresnel(NdotV);
@@ -282,7 +248,6 @@ vec3 evalBRDF(Material mat, vec3 N, vec3 V, vec3 L) {
     float NDF = DistributionGGX(N, H, mat.roughness);
     float G = GeometrySmith(N, V, L, mat.roughness);
 
-    // --- UPDATED to use roughness-aware Fresnel ---
     vec3 F = schlickFresnelRoughness(max(dot(H, V), 0.0), F0, mat.roughness);
 
     vec3 numerator = NDF * G * F;

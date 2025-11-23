@@ -111,16 +111,22 @@ void LightBuffer::bind(GLuint bindingPoint) const {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, ssbo);
 }
 
-void dispatchComputeShader(const GLuint program, const GLuint accumTexture, const GLuint outputTexture,
+void dispatchComputeShader(const GLuint program,
+    const GLuint accumTexture, const GLuint outputTexture,
+    const GLuint accumBloom, const GLuint outputBloom, // <--- NEW
     const RaytracerDimensions raytracer_dimensions, CameraParams camera_params, SkyParams sky_params,
     const size_t objectCount, const int lightCount,
     const int samplesPerFrame, const int maxTotalSamples, const uint32_t maxBounces) {
+
     glUseProgram(program);
 
     glBindImageTexture(0, outputTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
-
     glBindImageTexture(1, accumTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
     
+    // Bind new bloom buffers (Slots 4 and 5)
+    glBindImageTexture(4, outputBloom, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    glBindImageTexture(5, accumBloom, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+
     // Set uniforms
     glUniform2f(glGetUniformLocation(program, "resolution"), 
                 static_cast<GLfloat>(raytracer_dimensions.width), static_cast<GLfloat>(raytracer_dimensions.height));
@@ -130,6 +136,9 @@ void dispatchComputeShader(const GLuint program, const GLuint accumTexture, cons
     glUniform3fv(glGetUniformLocation(program, "cameraRight"), 1, &camera_params.right[0]);
     glUniform3fv(glGetUniformLocation(program, "cameraUp"), 1, &camera_params.up[0]);
     glUniform1f(glGetUniformLocation(program, "cameraFOV"), camera_params.FOV);
+
+    glUniform1f(glGetUniformLocation(program, "aperture"), camera_params.aperture);
+    glUniform1f(glGetUniformLocation(program, "focusDist"), camera_params.focusDist);
 
     glUniform3fv(glGetUniformLocation(program, "skyColorTop"), 1, &sky_params.colorTop[0]);
     glUniform3fv(glGetUniformLocation(program, "skyColorBottom"), 1, &sky_params.colorBottom[0]);

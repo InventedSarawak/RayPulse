@@ -1,0 +1,154 @@
+{
+  "scene": {
+    "name": "SSS Candle Study",
+    "version": "1.0"
+  },
+  "camera": {
+    "position": [0.0, 2.5, 9.5],
+    "rotation": [-15.0, 0.0, 0.0],
+    "fov": 40.0,
+    "aperture": 0.1,
+    "focusDist": 6.0
+  },
+  "sky": {
+    "colorTop": [0.17, 0.14, 0.1],
+    "colorBottom": [0.0, 0.0, 0.0]
+  },
+  "render": {
+    "width": 1600,
+    "height": 900,
+    "samplesPerFrame": 1,
+    "maxSamples": 20000,
+    "maxBounces": 64,
+    "bloom": {
+      "enabled": true,
+      "threshold": 7.5,
+      "knee": 0.5,
+      "intensity": 0.4,
+      "iterations": 5,
+      "downscale": 0.5
+    }
+  },
+  "materials": [
+    {
+      "name": "floor",
+      "template": "lambertian",
+      "albedo": [0.17, 0.17, 0.24],
+      "roughness": 0.2
+    },
+    {
+      "name": "mirror_wall",
+      "template": "metal",
+      "albedo": [0.95, 0.95, 0.95],
+      "roughness": 0.03
+    },
+    {
+      "name": "wax_cream",
+      "template": "plastic",
+      "albedo": [0.95, 0.9, 0.85],
+      "roughness": 0.5,
+      "subsurface": 1.0,
+      "subsurfaceRadius": 0.4,
+      "absorption": [0.1, 1.5, 6.0],
+      "_comment": "Absorbs Blue (6.0) quickly, leaving Red/Yellow glow"
+    },
+    {
+      "name": "candle_wick",
+      "template": "lambertian",
+      "albedo": [0.05, 0.05, 0.05]
+    },
+    {
+      "name": "flame_core",
+      "template": "emissive",
+      "emission": [1.0, 0.6, 0.1],
+      "emissionStrength": 40.0
+    },
+    {
+      "name": "flame_outer",
+      "template": "emissive",
+      "emission": [1.0, 0.3, 0.05],
+      "emissionStrength": 10.0
+    }
+  ],
+  "objects": [
+    {
+      "type": "plane",
+      "material": "floor",
+      "normal": [0.0, 1.0, 0.0],
+      "distance": 0.0
+    },
+    {
+      "type": "cube",
+      "material": "mirror_wall",
+      "center": [0.0, 3.0, -4.0],
+      "size": [8.0, 6.0, 0.2],
+      "rotation": [0.0, -30.0, 0.0]
+    },
+    {
+      "type": "cylinder",
+      "material": "wax_cream",
+      "center": [-1.5, 1.2, 0.0],
+      "radius": 0.5,
+      "height": 2.4
+    },
+    {
+      "type": "cylinder",
+      "material": "candle_wick",
+      "center": [-1.5, 2.45, 0.0],
+      "radius": 0.04,
+      "height": 0.1
+    },
+    {
+      "type": "cone",
+      "material": "flame_core",
+      "center": [-1.5, 2.65, 0.0],
+      "radius": 0.12,
+      "height": 0.3,
+      "isLight": true
+    },
+    {
+      "type": "cylinder",
+      "material": "wax_cream",
+      "center": [0.0, 0.9, 0.5],
+      "radius": 0.5,
+      "height": 1.8
+    },
+    {
+      "type": "cylinder",
+      "material": "candle_wick",
+      "center": [0.0, 1.85, 0.5],
+      "radius": 0.04,
+      "height": 0.1
+    },
+    {
+      "type": "cone",
+      "material": "flame_core",
+      "center": [0.0, 2.05, 0.5],
+      "radius": 0.12,
+      "height": 0.3,
+      "isLight": true
+    },
+    {
+      "type": "cylinder",
+      "material": "wax_cream",
+      "center": [1.5, 0.6, -0.2],
+      "radius": 0.5,
+      "height": 1.2
+    },
+    {
+      "type": "cylinder",
+      "material": "candle_wick",
+      "center": [1.5, 1.25, -0.2],
+      "radius": 0.04,
+      "height": 0.1
+    },
+    {
+      "type": "cone",
+      "material": "flame_core",
+      "center": [1.5, 1.45, -0.2],
+      "radius": 0.12,
+      "height": 0.3,
+      "isLight": true
+    }
+  ]
+}

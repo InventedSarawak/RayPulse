@@ -24,6 +24,7 @@ static MaterialConfig parseMaterial(const json& j) {
     if (j.contains("albedo")) mat.albedo = parseVec3(j["albedo"]);
     if (j.contains("emission")) mat.emission = parseVec3(j["emission"]);
     if (j.contains("emissionStrength")) mat.emissionStrength = j["emissionStrength"].get<float>();
+    if (j.contains("emissionMode")) mat.emissionMode = j["emissionMode"].get<int>();
 
     if (j.contains("roughness")) mat.roughness = j["roughness"].get<float>();
     if (j.contains("metallic")) mat.metallic = j["metallic"].get<float>();
@@ -43,6 +44,8 @@ static MaterialConfig parseMaterial(const json& j) {
     if (j.contains("subsurfaceRadius")) mat.subsurfaceRadius = j["subsurfaceRadius"].get<float>();
     if (j.contains("scatteringAnisotropy")) mat.scatteringAnisotropy = j["scatteringAnisotropy"].get<float>();
 
+    if (j.contains("bloomIntensity")) mat.bloomIntensity = j["bloomIntensity"].get<float>();
+
     return mat;
 }
 
@@ -55,7 +58,7 @@ static ObjectConfig parseObject(const json& j) {
 
     if (j.contains("center")) obj.center = parseVec3(j["center"]);
 
-    // Read Rotation (Degrees)
+    // Rotation (Degrees)
     if (j.contains("rotation")) obj.rotation = parseVec3(j["rotation"]);
 
     // Polymorphic parsing based on type
@@ -81,6 +84,17 @@ static ObjectConfig parseObject(const json& j) {
     }
 
     return obj;
+}
+
+static BloomConfig parseBloom(const json& j) {
+    BloomConfig bloom;
+    if (j.contains("enabled")) bloom.enabled = j["enabled"].get<bool>();
+    if (j.contains("threshold")) bloom.threshold = j["threshold"].get<float>();
+    if (j.contains("knee")) bloom.knee = j["knee"].get<float>();
+    if (j.contains("intensity")) bloom.intensity = j["intensity"].get<float>();
+    if (j.contains("iterations")) bloom.iterations = j["iterations"].get<int>();
+    if (j.contains("downscale")) bloom.downscale = j["downscale"].get<float>();
+    return bloom;
 }
 
 static std::string formatParseError(const json::exception& e, const std::string& filepath) {
@@ -120,6 +134,9 @@ std::optional<SceneConfig> SceneLoader::loadFromString(const std::string& jsonSt
             config.render.samplesPerFrame = render.value("samplesPerFrame", config.render.samplesPerFrame);
             config.render.maxSamples = render.value("maxSamples", config.render.maxSamples);
             config.render.maxBounces = render.value("maxBounces", config.render.maxBounces);
+            if (render.contains("bloom")) {
+                config.render.bloom = parseBloom(render["bloom"]);
+            }
         }
 
         if (j.contains("materials")) {

@@ -31,8 +31,9 @@ struct GPUMaterial{
 
     float subsurfaceRadius; // How far light can travel (in world units)
     float scatteringAnisotropy; // -1=backscatter, 0=isotropic, 1=forward
-    float _pad1; // Alignment padding
-    float _pad2;
+
+    float bloomIntensity; // <--- NEW: Independent control for bloom brightness
+    float _pad2;          // Reduced padding
 };
 
 class MaterialBuilder{
@@ -56,7 +57,11 @@ public:
         m.sheen = 0.0f;
         m.subsurfaceRadius = 0.0f; // ← NEW
         m.scatteringAnisotropy = 0.0f; // ← NEW
-        m._pad1 = 0.0f;
+
+        // FIX: Default to -1.0 to indicate "Link to Emission" by default.
+        // 0.0 would mean "Force No Bloom", which is wrong for standard emissive objects.
+        m.bloomIntensity = -1.0f;
+
         m._pad2 = 0.0f;
         return m;
     }
@@ -202,6 +207,18 @@ public:
         m.metallic = 0.0f;
         m.sheen = 0.5f;          // Moderate sheen
         m.specular = 0.3f;       // Some specular gloss
+        return m;
+    }
+
+    // NEW: The "Black Void" Material
+    static GPUMaterial BlackVoid(float bloomStrength = 5.0f) {
+        auto m = Default();
+        m.albedo = glm::vec3(0.0f); // Visual Black
+        m.roughness = 1.0f;
+        m.emission = glm::vec3(1.0f); // White Glow color
+        m.emissionStrength = 0.0f;    // Visual Intensity = 0 (Black)
+        m.bloomIntensity = bloomStrength; // Bloom Intensity = High
+        m.emissionMode = EMISSION_PHYSICAL;
         return m;
     }
 };

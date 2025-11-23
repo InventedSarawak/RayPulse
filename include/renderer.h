@@ -36,31 +36,16 @@ enum ObjectType {
     OBJ_ICOSAHEDRON = 9
 };
 
-// The Generic GPU Object (64 bytes)
-// Matches std430 layout: vec4 x 4
 struct GPUObject {
-    // Data 1: Bounding Info
-    // xyz = Center Position
-    // w   = Bounding Radius (for quick culling)
     glm::vec4 data1;
-
-    // Data 2: Orientation & Material
-    // xyz = Rotation (Euler angles in degrees)
-    // w   = Material Index
     glm::vec4 data2;
-
-    // Data 3: Dimensions & Type
-    // xyz = Scale/Dimensions (usage depends on type)
-    // w   = Object Type ID
     glm::vec4 data3;
-
-    // Data 4: Padding/Extra
     glm::vec4 data4;
 };
 
 inline GPUObject makeObject(int type, glm::vec3 center, glm::vec3 rot, glm::vec3 scale, int matIdx) {
     GPUObject obj{};
-    obj.data1 = glm::vec4(center, glm::length(scale)); // Approx bounding radius
+    obj.data1 = glm::vec4(center, glm::length(scale));
     obj.data2 = glm::vec4(rot, static_cast<float>(matIdx));
     obj.data3 = glm::vec4(scale, static_cast<float>(type));
     return obj;
@@ -70,6 +55,8 @@ inline GPUObject makeSphere(const glm::vec3 center, const float radius, const in
     GPUObject obj{};
     obj.data1 = glm::vec4(center, radius);
     obj.data2 = glm::vec4(static_cast<float>(matIndex), 0.0f, 0.0f, static_cast<float>(OBJ_SPHERE));
+    // FIX: Ensure data3 is populated so the shader knows the radius!
+    obj.data3 = glm::vec4(radius, radius, radius, static_cast<float>(OBJ_SPHERE));
     return obj;
 }
 
@@ -84,11 +71,8 @@ class SceneBuffer {
 public:
     SceneBuffer();
     ~SceneBuffer();
-
-    // Uploads the list of hittables to the GPU
     void update(const std::vector<GPUObject>& objects) const;
     void bind(GLuint bindingPoint) const;
-
 private:
     GLuint ssbo{};
 };
@@ -97,10 +81,8 @@ class MaterialBuffer {
 public:
     MaterialBuffer();
     ~MaterialBuffer();
-
     void update(const std::vector<GPUMaterial>& materials) const;
     void bind(GLuint bindingPoint) const;
-
 private:
     GLuint ssbo{};
 };
@@ -109,10 +91,8 @@ class LightBuffer {
 public:
     LightBuffer();
     ~LightBuffer();
-
     void update(const std::vector<int>& lightIndices) const;
     void bind(GLuint bindingPoint) const;
-
 private:
     GLuint ssbo{};
 };
@@ -127,6 +107,8 @@ typedef struct{
     glm::vec3 right;
     glm::vec3 up;
     float FOV;
+    float aperture;
+    float focusDist;
     unsigned int frameCount;
 } CameraParams;
 
@@ -135,7 +117,18 @@ typedef struct{
     glm::vec3 colorBottom;
 } SkyParams;
 
-void dispatchComputeShader(GLuint program, GLuint accumTexture, GLuint outputTexture,
+typedef struct{
+    bool enabled;
+    float threshold;
+    float knee;
+    float intensity;
+    int iterations;
+    float downscale;
+} BloomParams;
+
+void dispatchComputeShader(GLuint program,
+    GLuint accumTexture, GLuint outputTexture,
+    GLuint accumBloom, GLuint outputBloom,
     RaytracerDimensions raytracer_dimensions, CameraParams camera_params, SkyParams sky_params,
     size_t objectCount, int lightCount,
     int samplesPerFrame, int maxTotalSamples, uint32_t maxBounces);

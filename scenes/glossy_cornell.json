@@ -27,7 +27,7 @@
     { "name": "glossy_red", "template": "plastic", "albedo": [0.65, 0.05, 0.05], "roughness": 0.1 },
     { "name": "rough_gold", "template": "metal", "albedo": [0.8, 0.6, 0.2], "roughness": 0.25 },
 
-    { "name": "light", "template": "emissive", "emission": [1.0, 1.0, 1.0], "emissionStrength": 15.0 }
+    { "name": "light", "template": "emissive", "emission": [1.0, 1.0, 1.0], "emissionStrength": 5.0, "isLight": true }
   ],
   "objects": [
     { "type": "plane", "normal": [0.0, 1.0, 0.0], "distance": 0.0, "material": "floor" },

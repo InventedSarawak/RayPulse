@@ -45,3 +45,13 @@ vec3 randomPointOnUnitSphere() {
     float z = cos(phi);
     return vec3(x, y, z);
 }
+
+vec2 randomPointInUnitDisk() {
+    // Rejection sampling is simplest and works well
+    while (true) {
+        vec2 p = vec2(randomFloat(-1.0, 1.0), randomFloat(-1.0, 1.0));
+        if (dot(p, p) < 1.0) return p;
+    }
+    // Fallback (rarely reached)
+    return vec2(0.0);
+}

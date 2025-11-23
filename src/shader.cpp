@@ -106,14 +106,11 @@ GLuint createComputeProgramFromBinary(const char* binaryPath) {
     std::vector<char> spirv = readBinaryFile(binaryPath);
     if (spirv.empty()) return 0;
 
-    // 1. Create Shader Object
     GLuint shader = glCreateShader(GL_COMPUTE_SHADER);
 
-    // 2. Load Binary (Instead of glShaderSource)
     // GL_SHADER_BINARY_FORMAT_SPIR_V is part of OpenGL 4.6
     glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V, spirv.data(), (GLsizei)spirv.size());
 
-    // 3. Specialize (Compile/Link inside driver)
     // The "main" here refers to the function name void main() in GLSL
     glSpecializeShader(shader, "main", 0, nullptr, nullptr);
 
@@ -127,7 +124,7 @@ GLuint createComputeProgramFromBinary(const char* binaryPath) {
         return 0;
     }
 
-    // 4. Create Program (Same as before)
+    // Create Program
     GLuint program = glCreateProgram();
     glAttachShader(program, shader);
     glLinkProgram(program);

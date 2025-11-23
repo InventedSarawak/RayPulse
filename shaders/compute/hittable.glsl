@@ -39,7 +39,6 @@ layout(std430, binding = 3) readonly buffer LightBuffer {
 
 uniform int objectCount;
 
-// --- MATH HELPERS ---
 
 mat3 buildRotationMatrix(vec3 rotEuler) {
     vec3 rad = radians(rotEuler);
@@ -65,7 +64,7 @@ bool solveQuadratic(float a, float b, float c, out float t0, out float t1) {
 
 bool hitSphere(GPUObject obj, vec3 rayOrigin, vec3 rayDir, float tMin, float tMax, inout HitRecord rec) {
     vec3 center = obj.data1.xyz;
-    float radius = obj.data3.x;
+    float radius = obj.data1.w;
     vec3 oc = rayOrigin - center;
     float a = dot(rayDir, rayDir);
     float b = 2.0 * dot(oc, rayDir);
@@ -84,10 +83,10 @@ bool hitSphere(GPUObject obj, vec3 rayOrigin, vec3 rayDir, float tMin, float tMa
     rec.frontFace = dot(rayDir, outwardNormal) < 0.0;
     rec.normal = rec.frontFace ? outwardNormal : -outwardNormal;
 
-    // --- FIX: ASSIGN MATERIAL ---
-    rec.matIndex = int(obj.data2.w);
+    rec.matIndex = int(obj.data2.x);  // ← FIXED: Read from .x, not .w
     return true;
 }
+
 
 bool hitPlane(GPUObject obj, vec3 rayOrigin, vec3 rayDir, float tMin, float tMax, inout HitRecord rec) {
     vec3 normal = normalize(obj.data1.xyz);
@@ -108,8 +107,6 @@ bool hitPlane(GPUObject obj, vec3 rayOrigin, vec3 rayDir, float tMin, float tMax
     }
     return false;
 }
-
-// --- CURVED SHAPES (LOCAL) ---
 
 bool hitLocalCylinder(vec3 ro, vec3 rd, vec3 scale, float tMin, float tMax, out float tOut, out vec3 nOut) {
     float r = scale.x;
@@ -211,8 +208,6 @@ bool hitLocalCone(vec3 ro, vec3 rd, vec3 scale, float tMin, float tMax, out floa
     return false;
 }
 
-// --- POLYHEDRA ---
-
 bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, float tMax, out float tOut, out vec3 nOut) {
     float t0 = -1e6;
     float t1 = 1e6;
@@ -220,7 +215,6 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
     vec3 n0 = vec3(0.0);
     vec3 n1 = vec3(0.0);
 
-    // Optimized Cube (Exact Box Intersection)
     if (type == TYPE_CUBE) {
         vec3 rad = scale;
         vec3 m = 1.0 / rd;
@@ -234,7 +228,6 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
 
         if (tN > tF || tF < 0.0) return false;
 
-        // Valid hit logic
         float t = tN;
         if (t <= tMin) t = tF;
         if (t <= tMin || t >= tMax) return false;
@@ -250,7 +243,6 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
         return true;
     }
 
-    // Polyhedra
     vec4 planes[20];
     int count = 0;
     float s = scale.x; // Radius / Scale
@@ -259,7 +251,6 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
         // Distance to face = s / 3.0
         float d = s / 3.0;
         float k = 0.577350269; // 1/sqrt(3)
-        // Normals point OUTWARDS
         planes[0] = vec4( k, k, k, d);
         planes[1] = vec4( k,-k,-k, d);
         planes[2] = vec4(-k, k,-k, d);
@@ -277,7 +268,6 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
         // Normal slope = 2.0 (rise/run) -> normalized: (0.8944, 0.4472)
         float ny = 0.4472136;
         float nx = 0.8944271;
-        // Distance from center to side planes is tricky.
         // For a unit pyramid (base width 1, height 1), distance is 1/sqrt(5) ~ 0.4472 * (s/2)
         // Adjusted for scale 's' being full width/height
         float d = (s * 0.5) * nx; // ~ 0.447 * s
@@ -289,18 +279,14 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
         count = 5;
     }
     else if (type == TYPE_PRISM) {
-        // Triangular Prism
-        float h = scale.y * 0.5; // Half height
-        float r = scale.x * 0.5; // "Radius" (dist to face)
+        float h = scale.y * 0.5;
+        float r = scale.x * 0.5;
 
         // Top/Bottom caps
         planes[0] = vec4(0,  1, 0, h);
         planes[1] = vec4(0, -1, 0, h);
 
         // Sides (Equilateral triangle)
-        // Distance to face is r * 0.5 for unit triangle inscribed in circle,
-        // but let's assume 'scale.x' defines the apothem (dist to flat face) for simplicity.
-        // Or if scale.x is vertex radius, apothem = radius * cos(60/2) = radius * 0.5.
         float d = scale.x * 0.5;
 
         planes[2] = vec4(0, 0, 1, d); // Front face
@@ -309,7 +295,6 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
         float kx = 0.866025; // sin(60)
         float kz = 0.5;      // cos(60)
 
-        // Note: The normals must point OUTWARD.
         // Back-right: normal ( kx, 0, -kz)
         // Back-left:  normal (-kx, 0, -kz)
         planes[3] = vec4( kx, 0, -kz, d);
@@ -317,20 +302,11 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
         count = 5;
     }
     else if (type == TYPE_DODECAHEDRON) {
-        // 12 faces.
-        // Distance to face (inscribed sphere radius)
-        // ri = s * (1.113516...)
-        // But assuming 's' is the circumradius (vertex radius):
-        // ri = s * sqrt((50+22sqrt(5))/50) / sqrt(3) ??? No, simplified:
-        // Let's rely on normalized normals and standard Dodecahedron constant.
 
         float G = 1.61803398875; // Golden Ratio
         float k1 = 1.0 / sqrt(1.0 + G*G); // 0.52573111
         float k2 = G * k1;                // 0.85065080
 
-        // Distance from center to face for unit edge length dodecahedron is ~1.11.
-        // With normalized normals (length 1), d is simply the distance to the plane.
-        // For a unit radius dodecahedron, the face distance is roughly 0.7946 * radius.
         float d = s * 1.0;
 
         // 12 Faces
@@ -344,38 +320,14 @@ bool intersectConvexPlanes(vec3 ro, vec3 rd, vec3 scale, int type, float tMin, f
     }
     else if (type == TYPE_ICOSAHEDRON) {
         // 20 faces.
-        // Using standard orientation vertices (0, +-1, +-phi) is for vertices, not face normals.
-        // The face normals of an icosahedron are the vertices of a Dodecahedron!
-        // So we use the Dodecahedron vertex logic for normals here.
 
         float G = 1.61803398875;
         // Normals (same as Dodecahedron vertices normalized)
-        // (0, +-1, +-G) -> normalized (0, 0.5257, 0.8506)
-        // (+-1, +-G, 0)
-        // (+-G, 0, +-1)
-        // Wait, those are vertices. Let's use the explicit plane definitions.
-
-        // The distance from center to face for unit radius Icosahedron is:
-        // d = radius * (sqrt(3) / (3 * tan(pi/3) ??))
-        // d ≈ radius * 0.75576
 
         float d = s * 1.0;
 
-        // Normals:
-        // 1. ( +-1, +-1, +-1 ) / sqrt(3) -> 8 faces (octants)
-        // No, that's octahedron.
-
-        // Correct Icosahedron normals are complex.
-        // Let's use the set derived from (1,1,1) logic mixed with the golden rects.
-        // Actually, simpler: Use the centroids of the faces formed by (0,+-1,+-phi).
-        //
-        // A robust set of 20 normals for icosahedron:
-        float n_a = 0.35682208; // 1 / sqrt(1+phi^2 + phi^4) ?? no.
+        float n_a = 0.35682208;
         float n_b = 0.93417235;
-        // Let's trust your original normals but fix the Distance 'd'.
-        // Original constants: k=0.577, m=0.356, n=0.934.
-        // These look like normalized vectors.
-        // The issue was almost certainly 'd'.
 
         float k = 0.577350269;
         float m = 0.356822089;

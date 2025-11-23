@@ -8,7 +8,6 @@ RayTexture createTexture(const int width, const int height, const GLenum interna
     glGenTextures(1, &tex.id);
     glBindTexture(GL_TEXTURE_2D, tex.id);
 
-    // We generally upload float data (GL_FLOAT), but the GPU stores it as 'internalFormat'
     glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

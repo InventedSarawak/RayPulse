@@ -86,59 +86,59 @@ SceneData SceneBuilder::buildScene(const SceneConfig& config) {
         int matIndex = resolveMaterialIndex(objConfig.material, sceneData.materialMap);
 
         GPUObject gpuObj;
-        glm::vec3 scale = glm::vec3(1.0f);
-        int type = 0; // OBJ_SPHERE
 
         if (objConfig.type == "sphere") {
-            type = 0; // OBJ_SPHERE
-            scale = glm::vec3(objConfig.radius);
-        }
-        else if (objConfig.type == "plane") {
-            type = 1; // OBJ_PLANE
-            // Special packing for plane
-            gpuObj.data1 = glm::vec4(objConfig.normal, objConfig.distance);
-            gpuObj.data2 = glm::vec4(0.0f, 0.0f, 0.0f, (float)matIndex);
-            gpuObj.data3 = glm::vec4(0.0f, 0.0f, 0.0f, (float)type);
+            gpuObj = makeSphere(objConfig.center, objConfig.radius, matIndex);
             sceneData.objects.push_back(gpuObj);
-            continue;
         }
-        else if (objConfig.type == "cube" || objConfig.type == "box") {
-            type = 2; // OBJ_CUBE
-            // Scale for box is Half-Extents (Size / 2.0)
-            scale = objConfig.size * 0.5f;
-        }
-        else if (objConfig.type == "cylinder") {
-            type = 3; // OBJ_CYLINDER
-            scale = glm::vec3(objConfig.radius, objConfig.height, objConfig.radius);
-        }
-        else if (objConfig.type == "cone") {
-            type = 4; // OBJ_CONE
-            scale = glm::vec3(objConfig.radius, objConfig.height, objConfig.radius);
-        }
-        else if (objConfig.type == "pyramid") {
-            type = 5; // OBJ_PYRAMID
-            scale = glm::vec3(objConfig.radius);
-        }
-        else if (objConfig.type == "tetrahedron") {
-            type = 6; // OBJ_TETRAHEDRON
-            scale = glm::vec3(objConfig.radius);
-        }
-        else if (objConfig.type == "prism") {
-            type = 7; // OBJ_PRISM
-            scale = glm::vec3(objConfig.radius, objConfig.height, objConfig.radius);
-        }
-        else if (objConfig.type == "dodecahedron") {
-            type = 8; // OBJ_DODECAHEDRON
-            scale = glm::vec3(objConfig.radius);
-        }
-        else if (objConfig.type == "icosahedron") {
-            type = 9; // OBJ_ICOSAHEDRON
-            scale = glm::vec3(objConfig.radius);
-        }
+        else {
+            glm::vec3 scale = glm::vec3(1.0f);
+            int type = 0;
 
-        // Use the inline makeObject from renderer.h
-        gpuObj = makeObject(type, objConfig.center, objConfig.rotation, scale, matIndex);
-        sceneData.objects.push_back(gpuObj);
+            if (objConfig.type == "plane") {
+                type = 1; // OBJ_PLANE
+                gpuObj.data1 = glm::vec4(objConfig.normal, objConfig.distance);
+                gpuObj.data2 = glm::vec4(0.0f, 0.0f, 0.0f, (float)matIndex);
+                gpuObj.data3 = glm::vec4(0.0f, 0.0f, 0.0f, (float)type);
+                sceneData.objects.push_back(gpuObj);
+                continue;
+            }
+            else if (objConfig.type == "cube" || objConfig.type == "box") {
+                type = 2; // OBJ_CUBE
+                scale = objConfig.size * 0.5f;
+            }
+            else if (objConfig.type == "cylinder") {
+                type = 3; // OBJ_CYLINDER
+                scale = glm::vec3(objConfig.radius, objConfig.height, objConfig.radius);
+            }
+            else if (objConfig.type == "cone") {
+                type = 4; // OBJ_CONE
+                scale = glm::vec3(objConfig.radius, objConfig.height, objConfig.radius);
+            }
+            else if (objConfig.type == "pyramid") {
+                type = 5; // OBJ_PYRAMID
+                scale = glm::vec3(objConfig.radius);
+            }
+            else if (objConfig.type == "tetrahedron") {
+                type = 6; // OBJ_TETRAHEDRON
+                scale = glm::vec3(objConfig.radius);
+            }
+            else if (objConfig.type == "prism") {
+                type = 7; // OBJ_PRISM
+                scale = glm::vec3(objConfig.radius, objConfig.height, objConfig.radius);
+            }
+            else if (objConfig.type == "dodecahedron") {
+                type = 8; // OBJ_DODECAHEDRON
+                scale = glm::vec3(objConfig.radius);
+            }
+            else if (objConfig.type == "icosahedron") {
+                type = 9; // OBJ_ICOSAHEDRON
+                scale = glm::vec3(objConfig.radius);
+            }
+
+            gpuObj = makeObject(type, objConfig.center, objConfig.rotation, scale, matIndex);
+            sceneData.objects.push_back(gpuObj);
+        }
 
         if (objConfig.isLight) {
             sceneData.lightIndices.push_back((int)sceneData.objects.size() - 1);

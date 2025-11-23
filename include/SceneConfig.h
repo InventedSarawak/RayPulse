@@ -13,8 +13,11 @@ struct SceneInfo {
 // Camera configuration
 struct CameraConfig {
     glm::vec3 position = glm::vec3(0.1f, 0.5f, 0.0f);
-    glm::vec3 rotation = glm::vec3(0.0f, 0.0f, 0.0f); // pitch, yaw, roll
+    glm::vec3 rotation = glm::vec3(0.0f, 0.0f, 0.0f);
     float fov = 60.0f;
+
+    float aperture = 0.0f;
+    float focusDist = 10.0f;
 };
 
 // Sky/environment configuration
@@ -24,23 +27,34 @@ struct SkyConfig {
 };
 
 // Render settings
+struct BloomConfig {
+    bool enabled = true;
+    float threshold = 1.0f;
+    float knee = 0.5f;
+    float intensity = 0.3f;
+    int iterations = 4;
+    float downscale = 0.5f;
+};
+
 struct RenderConfig {
     int width = 1600;
     int height = 900;
     int samplesPerFrame = 8;
     int maxSamples = 5000;
     int maxBounces = 8;
+    BloomConfig bloom;
 };
 
 // Material definition from file
 struct MaterialConfig {
     std::string name;
     std::string template_type; // Optional: "lambertian", "metal", etc.
-    
+
     // All properties optional (will use template/default if not specified)
     std::optional<glm::vec3> albedo;
     std::optional<glm::vec3> emission;
     std::optional<float> emissionStrength;
+    std::optional<int> emissionMode;
 
     std::optional<float> roughness;
     std::optional<float> metallic;
@@ -59,6 +73,8 @@ struct MaterialConfig {
 
     std::optional<float> subsurfaceRadius;
     std::optional<float> scatteringAnisotropy;
+
+    std::optional<float> bloomIntensity; // <--- NEW
 };
 
 // Object definition from file

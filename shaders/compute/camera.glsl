@@ -8,6 +8,9 @@ uniform vec3 cameraRight;
 uniform vec3 cameraUp;
 uniform float cameraFOV;
 
+uniform float aperture;
+uniform float focusDist;
+
 uniform uint frameCount;
 uniform int samplesPerFrame;
 uniform int maxTotalSamples;

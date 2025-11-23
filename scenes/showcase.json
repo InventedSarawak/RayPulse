@@ -1,0 +1,204 @@
+{
+  "scene": {
+    "name": "Raypulse Showcase",
+    "version": "1.0"
+  },
+  "camera": {
+    "position": [0.0, 4.0, 15.0],
+    "rotation": [-15.0, 0.0, 0.0],
+    "fov": 45.0,
+    "aperture": 0.1,
+    "focusDist": 13.0
+  },
+  "sky": {
+    "colorTop": [0.6, 0.7, 0.9],
+    "colorBottom": [0.9, 0.9, 0.95]
+  },
+  "render": {
+    "width": 1280,
+    "height": 720,
+    "samplesPerFrame": 4,
+    "maxSamples": 5000,
+    "maxBounces": 8,
+    "bloom": {
+      "enabled": true,
+      "threshold": 1.0,
+      "knee": 0.5,
+      "intensity": 0.3,
+      "iterations": 4,
+      "downscale": 0.5
+    }
+  },
+  "materials": [
+    {
+      "name": "mat_floor",
+      "template": "lambertian",
+      "albedo": [0.2, 0.2, 0.22],
+      "roughness": 0.1
+    },
+    {
+      "name": "mat_light_warm",
+      "template": "emissive",
+      "emission": [1.0, 0.8, 0.6],
+      "emissionStrength": 6.5
+    },
+    {
+      "name": "mat_light_cool",
+      "template": "emissive",
+      "emission": [0.6, 0.8, 1.0],
+      "emissionStrength": 5.0
+    },
+    {
+      "name": "mat_void_black",
+      "emissionMode": 1,
+      "emission": [0.0, 0.0, 0.0],
+      "emissionStrength": 1.75,
+      "bloomIntensity": 30.0,
+      "albedo": [0.0, 0.0, 0.0]
+    },
+    {
+      "name": "mat_gold",
+      "template": "metal",
+      "albedo": [1.0, 0.85, 0.57],
+      "roughness": 0.15
+    },
+    {
+      "name": "mat_copper",
+      "template": "metal",
+      "albedo": [0.95, 0.64, 0.54],
+      "roughness": 0.4
+    },
+    {
+      "name": "mat_glass_heavy",
+      "template": "glass",
+      "ior": 2.4,
+      "absorption": [0.1, 0.8, 0.8]
+    },
+    {
+      "name": "mat_jade_sss",
+      "template": "dielectric",
+      "albedo": [0.2, 0.8, 0.4],
+      "roughness": 0.2,
+      "subsurface": 1.0,
+      "subsurfaceRadius": 0.5,
+      "absorption": [2.0, 0.5, 2.0]
+    },
+    {
+      "name": "mat_carpaint",
+      "template": "clearcoat",
+      "albedo": [0.7, 0.05, 0.05],
+      "metallic": 0.4,
+      "clearcoat": 1.0,
+      "clearcoatRoughness": 0.02
+    },
+    {
+      "name": "mat_velvet",
+      "template": "velvet",
+      "albedo": [0.1, 0.1, 0.6],
+      "sheen": 1.0
+    },
+    {
+      "name": "mat_satin",
+      "template": "satin",
+      "albedo": [0.8, 0.2, 0.6]
+    },
+    {
+      "name": "mat_plastic",
+      "template": "plastic",
+      "albedo": [0.9, 0.9, 0.9],
+      "roughness": 0.05
+    }
+  ],
+  "objects": [
+    {
+      "type": "plane",
+      "material": "mat_floor",
+      "normal": [0.0, 1.0, 0.0],
+      "distance": 0.0
+    },
+    {
+      "type": "sphere",
+      "material": "mat_light_warm",
+      "isLight": true,
+      "center": [-8.0, 8.0, 5.0],
+      "radius": 2.0
+    },
+    {
+      "type": "sphere",
+      "material": "mat_light_cool",
+      "isLight": true,
+      "center": [8.0, 5.0, 2.0],
+      "radius": 1.5
+    },
+    {
+      "type": "dodecahedron",
+      "material": "mat_glass_heavy",
+      "center": [0.0, 1.2, 0.0],
+      "radius": 1.2,
+      "rotation": [15.0, 45.0, 10.0]
+    },
+    {
+      "type": "icosahedron",
+      "material": "mat_jade_sss",
+      "center": [-4.5, 1.0, 1.5],
+      "radius": 1.0,
+      "rotation": [0.0, 20.0, 0.0]
+    },
+    {
+      "type": "sphere",
+      "material": "mat_carpaint",
+      "center": [4.5, 1.0, 1.5],
+      "radius": 1.0
+    },
+    {
+      "type": "cube",
+      "material": "mat_velvet",
+      "center": [-5.5, 0.75, -3.0],
+      "size": [1.5, 1.5, 1.5],
+      "rotation": [0.0, 30.0, 0.0]
+    },
+    {
+      "type": "cylinder",
+      "material": "mat_gold",
+      "center": [5.5, 1.0, -3.0],
+      "radius": 0.75,
+      "height": 2.0,
+      "rotation": [0.0, 0.0, 15.0]
+    },
+    {
+      "type": "cone",
+      "material": "mat_copper",
+      "center": [-2.0, 0.75, 5.5],
+      "radius": 0.75,
+      "height": 1.5
+    },
+    {
+      "type": "pyramid",
+      "material": "mat_satin",
+      "center": [2.0, 0.75, 5.5],
+      "radius": 1.5,
+      "rotation": [0.0, -20.0, 0.0]
+    },
+    {
+      "type": "tetrahedron",
+      "material": "mat_plastic",
+      "center": [0.0, 4.5, -2.0],
+      "radius": 0.8,
+      "rotation": [45.0, 45.0, 0.0]
+    },
+    {
+      "type": "prism",
+      "material": "mat_glass_heavy",
+      "center": [0.0, 0.5, -6.0],
+      "radius": 1.0,
+      "height": 5.0,
+      "rotation": [0.0, 90.0, 90.0]
+    },
+    {
+      "type": "sphere",
+      "material": "mat_void_black",
+      "center": [0.0, 6.5, -6.0],
+      "radius": 1.25
+    }
+  ]
+}
