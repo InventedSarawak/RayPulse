@@ -53,12 +53,31 @@ static ObjectConfig parseObject(const json& j) {
     obj.material = j.value("material", "default");
     obj.isLight = j.value("isLight", false);
 
+    if (j.contains("center")) obj.center = parseVec3(j["center"]);
+
+    // Read Rotation (Degrees)
+    if (j.contains("rotation")) obj.rotation = parseVec3(j["rotation"]);
+
+    // Polymorphic parsing based on type
     if (obj.type == "sphere") {
-        obj.center = parseVec3(j["center"], glm::vec3(0.0f));
         obj.radius = j.value("radius", 1.0f);
-    } else if (obj.type == "plane") {
-        obj.normal = parseVec3(j["normal"], glm::vec3(0.0f, 1.0f, 0.0f));
+    }
+    else if (obj.type == "plane") {
+        if (j.contains("normal")) obj.normal = parseVec3(j["normal"], glm::vec3(0.0f, 1.0f, 0.0f));
         obj.distance = j.value("distance", 0.0f);
+    }
+    else if (obj.type == "cube" || obj.type == "box") {
+        if (j.contains("size")) obj.size = parseVec3(j["size"]);
+        else if (j.contains("radius")) obj.size = glm::vec3(j.value("radius", 1.0f));
+        else obj.size = glm::vec3(1.0f);
+    }
+    else if (obj.type == "cylinder" || obj.type == "cone" || obj.type == "prism") {
+        obj.radius = j.value("radius", 0.5f);
+        obj.height = j.value("height", 1.0f);
+    }
+    else {
+        // Polyhedra (Tetra, Dodeca, Icosa, Pyramid)
+        obj.radius = j.value("radius", 1.0f);
     }
 
     return obj;
@@ -105,12 +124,14 @@ std::optional<SceneConfig> SceneLoader::loadFromString(const std::string& jsonSt
 
         if (j.contains("materials")) {
             for (const auto& matJson : j["materials"]) {
+                if (!matJson.contains("name")) continue;
                 config.materials.push_back(parseMaterial(matJson));
             }
         }
 
         if (j.contains("objects")) {
             for (const auto& objJson : j["objects"]) {
+                if (!objJson.contains("type")) continue;
                 config.objects.push_back(parseObject(objJson));
             }
         }

@@ -1,0 +1,110 @@
+{
+  "scene": {
+    "name": "SSS Calibration",
+    "version": "1.0"
+  },
+  "camera": {
+    "position": [0.0, 1.0, 3.5],
+    "rotation": [-10.0, 0.0, 0.0],
+    "fov": 40.0
+  },
+  "sky": {
+    "colorTop": [0.02, 0.02, 0.05],
+    "colorBottom": [0.0, 0.0, 0.0]
+  },
+  "render": {
+    "width": 1280,
+    "height": 720,
+    "samplesPerFrame": 4,
+    "maxSamples": 5000,
+    "maxBounces": 16
+  },
+  "materials": [
+    {
+      "name": "floor",
+      "template": "lambertian",
+      "albedo": [0.2, 0.2, 0.2]
+    },
+    {
+      "name": "back_light",
+      "template": "emissive",
+      "emission": [1.0, 0.9, 0.8],
+      "emissionStrength": 25.0
+    },
+    {
+      "name": "front_fill",
+      "template": "emissive",
+      "emission": [0.8, 0.8, 1.0],
+      "emissionStrength": 2.0
+    },
+    {
+      "name": "sss_wax_red",
+      "template": "plastic",
+      "albedo": [0.9, 0.1, 0.1],
+      "roughness": 0.1,
+      "subsurface": 1.0,
+      "subsurfaceRadius": 0.8,
+      "absorption": [0.1, 0.5, 0.5]
+    },
+    {
+      "name": "sss_marble_white",
+      "template": "plastic",
+      "albedo": [0.9, 0.9, 0.8],
+      "roughness": 0.2,
+      "subsurface": 1.0,
+      "subsurfaceRadius": 0.3,
+      "absorption": [0.05, 0.05, 0.1]
+    },
+    {
+      "name": "sss_jade_green",
+      "template": "plastic",
+      "albedo": [0.1, 0.8, 0.3],
+      "roughness": 0.1,
+      "subsurface": 1.0,
+      "subsurfaceRadius": 0.1,
+      "absorption": [0.8, 0.1, 0.8]
+    }
+  ],
+  "objects": [
+    {
+      "type": "plane",
+      "normal": [0.0, 1.0, 0.0],
+      "distance": 0.0,
+      "material": "floor"
+    },
+    {
+      "type": "sphere",
+      "center": [0.0, 1.5, -2.0],
+      "radius": 0.8,
+      "material": "back_light",
+      "isLight": true,
+      "_comment": "Strong backlight to show light passing through spheres"
+    },
+    {
+      "type": "sphere",
+      "center": [2.0, 3.0, 4.0],
+      "radius": 0.5,
+      "material": "front_fill",
+      "isLight": true,
+      "_comment": "Weak front fill to see surface reflections"
+    },
+    {
+      "type": "sphere",
+      "center": [-1.2, 0.6, 0.0],
+      "radius": 0.6,
+      "material": "sss_wax_red"
+    },
+    {
+      "type": "sphere",
+      "center": [0.0, 0.6, 0.0],
+      "radius": 0.6,
+      "material": "sss_marble_white"
+    },
+    {
+      "type": "sphere",
+      "center": [1.2, 0.6, 0.0],
+      "radius": 0.6,
+      "material": "sss_jade_green"
+    }
+  ]
+}

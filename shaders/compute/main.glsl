@@ -24,7 +24,7 @@ vec3 sampleSky(vec3 rayDir) {
     return mix(skyColorBottom, skyColorTop, t);
 }
 
-// --- UPDATED NEE WITH TRANSPARENT SHADOWS ---
+// --- NEE WITH TRANSPARENT SHADOWS ---
 vec3 sampleDirectLight(vec3 surfacePos, vec3 surfaceNormal, vec3 V, Material surfaceMat, int lightObjIndex) {
     GPUObject lightObj = objects[lightObjIndex];
     vec3 lightPos = lightObj.data1.xyz;
@@ -65,16 +65,16 @@ vec3 sampleDirectLight(vec3 surfacePos, vec3 surfaceNormal, vec3 V, Material sur
         // We hit something. Check if it's transparent.
         Material occMat = materials[shadowRec.matIndex];
 
-        if (occMat.transmission > 0.01) {
-            // It is transparent!
-            // Tint the shadow by the glass albedo (approximate)
+        // Check Transmission OR SSS (SSS objects allow light to pass through effectively)
+        if (occMat.transmission > 0.01 || occMat.subsurface > 0.0) {
+            // It is transparent/translucent!
+            // Tint the shadow by the albedo
             throughput *= occMat.albedo;
 
             // Push ray past this surface and continue
             currentOrigin = shadowRec.p + L * 0.001;
             remainingDist -= shadowRec.t;
 
-            // Safety break if we ran out of distance (shouldn't happen if logic is sound)
             if (remainingDist <= 0.0) break;
         } else {
             // It's opaque. Light is blocked.
@@ -92,7 +92,6 @@ vec3 sampleDirectLight(vec3 surfacePos, vec3 surfaceNormal, vec3 V, Material sur
     vec3 lightRadiance = lightMat.emission * lightMat.emissionStrength * weight;
     vec3 brdf = evalBRDF(surfaceMat, surfaceNormal, V, L);
 
-    // Apply the transparent throughput to the final light contribution
     return lightRadiance * brdf * throughput;
 }
 
@@ -104,19 +103,127 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
 
     bool lastPathWasSpecular = true;
 
-    for (uint bounce = 0u; bounce < maxBounces; ++bounce) {
-        HitRecord rec;
+    bool insideSSS = false;
+    vec3 sssSigmaT = vec3(0.0);
+    vec3 sssAlbedo = vec3(0.0);
 
+    for (uint bounce = 0u; bounce < maxBounces; ++bounce) {
+
+        if (insideSSS) {
+            HitRecord rec;
+            bool hitBoundary = hitWorld(currentOrigin, currentDir, 0.001, INFINITY, rec);
+            float distToBoundary = hitBoundary ? rec.t : INFINITY;
+
+            // Sample distance using the MAX density (Color channel with highest absorption)
+            float densityMax = max(sssSigmaT.r, max(sssSigmaT.g, sssSigmaT.b));
+            float distToScatter = -log(randomFloat()) / max(densityMax, 0.0001);
+
+            if (distToScatter < distToBoundary) {
+                // --- SCATTER (Inside) ---
+                currentOrigin += currentDir * distToScatter;
+
+                // Weight = Transmittance / PDF
+                // PDF = density * exp(-density * dist)
+                // Transmittance (for this color channel) = exp(-sigma_t * dist)
+                // We simplify this by just multiplying by Albedo, assuming densityMax is close enough,
+                // but strictly we should adjust for colored density:
+                // throughput *= sssAlbedo * (exp(-sssSigmaT * dist) / exp(-densityMax * dist));
+                // For simplicity/stability, using just Albedo is common in simple tracers,
+                // but let's add the spectral correction for colored glass SSS:
+
+                vec3 trReal = exp(-sssSigmaT * distToScatter);
+                float pdf = densityMax * exp(-densityMax * distToScatter);
+
+                throughput *= sssAlbedo * (trReal * densityMax / pdf); // Simplifies to Albedo * correction
+                // Correction reduces to: exp((densityMax - sssSigmaT) * dist)
+
+                currentDir = randomPointOnUnitSphere();
+            } else {
+                // --- EXIT (Boundary) ---
+                currentOrigin = rec.p;
+
+                // MATH FIX:
+                // We reached the boundary. The probability of this happening was:
+                // Prob_Exit = exp(-densityMax * distToBoundary)
+                // We must divide the actual physical transmittance by this probability
+                // to effectively "cancel out" the survival bias.
+
+                vec3 trReal = exp(-sssSigmaT * distToBoundary);
+                float probExit = exp(-densityMax * distToBoundary);
+
+                // Weigh the throughput
+                throughput *= trReal / max(probExit, 1e-8);
+
+                // Refract Out
+                Material mat = materials[rec.matIndex];
+                float ior = mat.ior;
+
+                // Check Total Internal Reflection (TIR)
+                // If exiting: n1=IOR, n2=1.0. Eta = IOR/1.0
+                vec3 outwardN = rec.frontFace ? rec.normal : -rec.normal;
+                vec3 unitDir = normalize(currentDir);
+                float cosTheta = min(dot(-unitDir, -outwardN), 1.0);
+                float sinTheta = sqrt(max(0.0, 1.0 - cosTheta*cosTheta));
+                float eta = ior;
+
+                if (eta * sinTheta > 1.0) {
+                    // TIR: Reflect back inside
+                    // OLD (Incorrect): Perfect mirror reflection causes hard "glowing edges"
+                    // currentDir = reflect(unitDir, -outwardN);
+
+                    // NEW (Correct): Scatter the ray back inside efficiently.
+                    // Since we are inside a scattering volume, hitting a wall and reflecting
+                    // is just another scattering event. We can treat it as a diffuse bounce
+                    // off the inside wall, or just pick a random direction into the hemisphere.
+
+                    // Simple fix: Randomize direction (Diffuse reflection back inside)
+                    // We need a random direction in the hemisphere of -outwardN (inward)
+                    currentDir = normalize(-outwardN + randomPointOnUnitSphere());
+
+                    currentOrigin -= outwardN * 0.001; // Push back in
+                } else {
+                    // Refract Out
+                    currentDir = refractVec(unitDir, -outwardN, eta);
+                    currentOrigin += outwardN * 0.001;
+                    insideSSS = false;
+                    lastPathWasSpecular = true;
+                }
+            }
+            continue;
+        }
+
+        // --- STANDARD SURFACE LOGIC ---
+        HitRecord rec;
         if (hitWorld(currentOrigin, currentDir, 0.001, INFINITY, rec)) {
             Material mat = materials[rec.matIndex];
 
-            // 1. EMISSION
+            // 1. CHECK FOR SSS ENTRY
+            if (mat.subsurface > 0.0 && rec.frontFace) {
+                vec3 f0 = calculateF0(mat.albedo, mat.metallic, mat.specularTint, mat.specular);
+                vec3 fresnel = schlickFresnelRoughness(dot(rec.normal, -currentDir), f0, mat.roughness);
+                float reflectProb = (fresnel.r + fresnel.g + fresnel.b) / 3.0;
+
+                if (randomFloat() > reflectProb) {
+                    insideSSS = true;
+                    // Density = 1.0 / Radius
+                    float radius = max(mat.subsurfaceRadius, 0.001);
+                    sssSigmaT = vec3(1.0 / radius);
+                    // If absorption is non-zero, add it to extinction coefficient
+                    sssSigmaT += mat.absorption;
+
+                    sssAlbedo = mat.albedo;
+
+                    float eta = 1.0 / mat.ior;
+                    currentDir = refractVec(currentDir, rec.normal, eta);
+                    currentOrigin = rec.p - rec.normal * 0.001;
+                    continue;
+                }
+            }
+
+            // 2. EMISSION
             bool hitLight = false;
             for (int i = 0; i < lightCount; i++) {
-                if (rec.objIndex == lightIndices[i]) {
-                    hitLight = true;
-                    break;
-                }
+                if (rec.objIndex == lightIndices[i]) { hitLight = true; break; }
             }
 
             if (hitLight) {
@@ -132,7 +239,7 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
                 }
             }
 
-            // 2. ABSORPTION (Beer's Law)
+            // 3. ABSORPTION
             if (!rec.frontFace && mat.transmission > 0.01) {
                 vec3 absorption = mat.absorption;
                 float distanceTraveled = rec.t;
@@ -140,12 +247,10 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
                 throughput *= transmittance;
             }
 
-            // 3. NEE DECISION
-            // We enable NEE for almost everything except perfect transmission/mirrors.
-            // Rough glass *could* use NEE, but perfect glass cannot.
-            bool skipNEE = mat.transmission > 0.01;
+            // 4. NEE DECISION
+            bool skipNEE = mat.transmission > 0.01 || mat.subsurface > 0.0;
 
-            // 4. NEE EXECUTION
+            // 5. NEE EXECUTION
             if (!skipNEE && bounce < maxBounces - 1 && lightCount > 0) {
                 vec3 V = -currentDir;
                 for (int lightIdx = 0; lightIdx < lightCount; lightIdx++) {
@@ -154,7 +259,7 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
                 }
             }
 
-            // 5. SCATTERING
+            // 6. SCATTERING
             vec3 attenuation;
             vec3 scattered;
             bool isSpecularBounce;
@@ -164,17 +269,12 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
                 currentOrigin = rec.p;
                 currentDir = scattered;
 
-                // MIS Logic:
-                // If we took a Specular path (Reflection/Refraction), NEE didn't account for it.
-                // So we must accept Implicit hits (lastPathWasSpecular = true).
-                // If we took a Diffuse path, NEE handled it, UNLESS we skipped NEE.
                 if (isSpecularBounce) {
                     lastPathWasSpecular = true;
                 } else {
                     lastPathWasSpecular = skipNEE;
                 }
 
-                // Russian Roulette
                 if (bounce > 3) {
                     float p = max(throughput.r, max(throughput.g, throughput.b));
                     if (randomFloat() > p) break;
@@ -190,6 +290,7 @@ vec3 traceRay(vec3 rayOrigin, vec3 rayDir) {
     }
     return radiance;
 }
+
 
 void main()
 {

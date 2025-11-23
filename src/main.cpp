@@ -116,7 +116,7 @@ int main() {
     std::string shaderPath = getResourcePath("main.spv");
     GLuint computeProgram = createComputeProgramFromBinary(shaderPath.c_str());
 
-    auto sceneConfigOpt = SceneLoader::loadFromFile("./scenes/roughness_study.json");
+    auto sceneConfigOpt = SceneLoader::loadFromFile("./scenes/glass_test.json");
     if (!sceneConfigOpt.has_value()) {
         printf("ERROR: Failed to load scene: %s\n", SceneLoader::getLastError().c_str());
         glfwTerminate();

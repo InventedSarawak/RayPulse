@@ -63,17 +63,25 @@ struct MaterialConfig {
 
 // Object definition from file
 struct ObjectConfig {
-    std::string type; // "sphere" or "plane"
-    std::string material; // Material name reference
-    bool isLight = false; // Mark for NEE (future use)
-    
-    // Sphere properties
+    std::string type;
+    std::string material;
+    bool isLight = false;
+
+    // Geometric Properties
+    // All shapes use 'center'
     glm::vec3 center = glm::vec3(0.0f);
+
+    // Sphere/Cylinder/Polyhedra use 'radius' or 'scale'
     float radius = 1.0f;
-    
-    // Plane properties
-    glm::vec3 normal = glm::vec3(0.0f, 1.0f, 0.0f);
-    float distance = 0.0f;
+
+    // Plane/Box/Prism use specific dimensions
+    glm::vec3 normal = glm::vec3(0.0f, 1.0f, 0.0f); // Plane only
+    float distance = 0.0f; // Plane only
+
+    // New Properties
+    glm::vec3 rotation = glm::vec3(0.0f); // Euler angles
+    glm::vec3 size = glm::vec3(1.0f);     // Box extents / dimensions
+    float height = 1.0f;                  // Cylinder/Cone/Prism height
 };
 
 // Top-level scene structure

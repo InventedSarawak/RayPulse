@@ -1,7 +1,6 @@
 // Emission mode constants
 #define EMISSION_PHYSICAL  0
 #define EMISSION_ABSOLUTE  1
-#define PI 3.14159265359
 
 struct Material {
     vec3 albedo; float _pad0;

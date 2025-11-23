@@ -25,22 +25,46 @@ private:
 
 enum ObjectType {
     OBJ_SPHERE = 0,
-    OBJ_PLANE = 1
+    OBJ_PLANE = 1,
+    OBJ_CUBE = 2,
+    OBJ_CYLINDER = 3,
+    OBJ_CONE = 4,
+    OBJ_PYRAMID = 5,
+    OBJ_TETRAHEDRON = 6,
+    OBJ_PRISM = 7,
+    OBJ_DODECAHEDRON = 8,
+    OBJ_ICOSAHEDRON = 9
 };
 
-// The Generic GPU Object (32 bytes)
-// Matches std430 layout: vec4, vec4
+// The Generic GPU Object (64 bytes)
+// Matches std430 layout: vec4 x 4
 struct GPUObject {
-    // Slot 1: Position (xyz) and a primary scalar (w)
-    // For Sphere: Center(xyz), Radius(w)
-    // For Plane:  Normal(xyz), Distance(w)
+    // Data 1: Bounding Info
+    // xyz = Center Position
+    // w   = Bounding Radius (for quick culling)
     glm::vec4 data1;
 
-    // Slot 2: Secondary data (xyz) and Type ID (w)
-    // For Sphere: Material(x), unused(yz), Type(w)
-    // For Plane:  Material(x), unused(yz), Type(w)
+    // Data 2: Orientation & Material
+    // xyz = Rotation (Euler angles in degrees)
+    // w   = Material Index
     glm::vec4 data2;
+
+    // Data 3: Dimensions & Type
+    // xyz = Scale/Dimensions (usage depends on type)
+    // w   = Object Type ID
+    glm::vec4 data3;
+
+    // Data 4: Padding/Extra
+    glm::vec4 data4;
 };
+
+inline GPUObject makeObject(int type, glm::vec3 center, glm::vec3 rot, glm::vec3 scale, int matIdx) {
+    GPUObject obj{};
+    obj.data1 = glm::vec4(center, glm::length(scale)); // Approx bounding radius
+    obj.data2 = glm::vec4(rot, static_cast<float>(matIdx));
+    obj.data3 = glm::vec4(scale, static_cast<float>(type));
+    return obj;
+}
 
 inline GPUObject makeSphere(const glm::vec3 center, const float radius, const int matIndex = 0) {
     GPUObject obj{};
